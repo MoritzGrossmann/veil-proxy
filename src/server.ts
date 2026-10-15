@@ -130,7 +130,11 @@ app.get('/__proxy/client.js', async (_req, reply) => reply.type('application/jav
 app.get('/go', async (req, reply) => {
   const input = (req.query as { url?: string }).url;
   if (!input) return reply.redirect('/');
-  return reply.redirect('/p/' + encodeURIComponent(normalizeInput(input)));
+  const trimmed = input.trim();
+  // Kein Schema, und entweder Leerzeichen oder kein Punkt/Doppelpunkt (z. B. "Foo Bar"): als Suche behandeln
+  const looksLikeUrl = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) || /^(https?):\/(?!\/)/i.test(trimmed) || (!/\s/.test(trimmed) && /[.:]|^localhost/i.test(trimmed));
+  const target = looksLikeUrl ? normalizeInput(trimmed) : `https://duckduckgo.com/?q=${encodeURIComponent(trimmed)}`;
+  return reply.redirect('/p/' + encodeURIComponent(target));
 });
 
 app.all('/p/*', async (req, reply) => {

@@ -108,6 +108,39 @@
     };
   });
 
+  // Adressleiste wie im Browser (nur im obersten Fenster)
+  if (window.top === window) {
+    var BAR_HEIGHT = 44;
+    var initBar = function () {
+      if (document.getElementById('__proxy_bar')) return;
+      var host = document.createElement('div');
+      host.id = '__proxy_bar';
+      host.style.cssText = 'all:initial;position:fixed;top:0;left:0;right:0;height:' + BAR_HEIGHT + 'px;z-index:2147483647;';
+      var root = host.attachShadow({ mode: 'open' });
+      root.innerHTML =
+        '<style>' +
+        'form{display:flex;gap:8px;align-items:center;box-sizing:border-box;height:' + BAR_HEIGHT + 'px;padding:6px 10px;background:#f1f3f4;border-bottom:1px solid #0003;font:14px system-ui,sans-serif}' +
+        'input{flex:1;min-width:0;height:100%;box-sizing:border-box;padding:0 12px;font:inherit;border:1px solid #0003;border-radius:16px;background:#fff;color:#000}' +
+        'button{height:100%;padding:0 14px;font:inherit;border:0;border-radius:16px;background:#2563eb;color:#fff;cursor:pointer}' +
+        '@media (prefers-color-scheme:dark){form{background:#2b2b2b}input{background:#1a1a1a;color:#eee;border-color:#fff3}}' +
+        '</style>' +
+        '<form action="/go" method="get"><input name="url" type="text" spellcheck="false" autocomplete="off"><button type="submit">Öffnen</button></form>';
+      var input = root.querySelector('input');
+      var sync = function () {
+        var cur = unprox(location.pathname + location.search);
+        if (root.activeElement !== input) input.value = cur + location.hash;
+      };
+      sync();
+      window.addEventListener('popstate', sync);
+      window.addEventListener('hashchange', sync);
+      setInterval(sync, 1000);
+      document.documentElement.appendChild(host);
+      document.documentElement.style.setProperty('padding-top', BAR_HEIGHT + 'px', 'important');
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initBar);
+    else initBar();
+  }
+
   // GET-Formulare: Browser würde die Query der Proxy-URL ersetzen, daher selbst zusammenbauen
   document.addEventListener(
     'submit',
