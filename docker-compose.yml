@@ -10,3 +10,5 @@ services:
       PROXY_PASS: ${PROXY_PASS:?PROXY_PASS muss gesetzt sein (z. B. in .env)}
       PROXY_SECRET: ${PROXY_SECRET:-}
       PROXY_TOKEN_TTL_HOURS: ${PROXY_TOKEN_TTL_HOURS:-12}
+      # Comma-separated private hostnames/IPs/CIDRs the proxy may reach (blocked by default).
+      PROXY_ALLOW_HOSTS: ${PROXY_ALLOW_HOSTS:-}

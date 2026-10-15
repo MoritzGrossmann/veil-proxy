@@ -14,3 +14,5 @@ services:
       # Set a long random value (openssl rand -hex 32) to keep proxy URLs valid across restarts.
       PROXY_SECRET: ${PROXY_SECRET:-}
       PROXY_TOKEN_TTL_HOURS: ${PROXY_TOKEN_TTL_HOURS:-12}
+      # Comma-separated private hostnames/IPs/CIDRs the proxy may reach (blocked by default).
+      PROXY_ALLOW_HOSTS: ${PROXY_ALLOW_HOSTS:-}

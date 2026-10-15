@@ -7,7 +7,7 @@ Veil is a rewriting web proxy. Enter a URL, and the target page is fetched throu
 - Rewrites HTML, links and resources so everything keeps flowing through the proxy
 - Address bar on proxied pages, with a DuckDuckGo search fallback for non-URL input
 - Encrypted target URLs in proxy paths (AES-256-GCM)
-- SSRF protection (private, loopback and link-local addresses are blocked)
+- SSRF protection (private, loopback and link-local addresses are blocked unless explicitly allowed via `PROXY_ALLOW_HOSTS`)
 - Per-session server-side cookie jar for target sites
 - Optional login (username/password) with Bearer token authentication
 
@@ -75,10 +75,25 @@ All configuration is done through environment variables.
 | `PROXY_USER`   | –         | Login username. Authentication is enabled when both `PROXY_USER` and `PROXY_PASS` are set.                   |
 | `PROXY_PASS`   | –         | Login password.                                                                                              |
 | `PROXY_TOKEN_TTL_HOURS` | `12` | Lifetime of issued tokens in hours.                                                                    |
+| `PROXY_ALLOW_HOSTS` | – | Comma-separated hostnames, IP addresses and CIDR ranges that may be reached even if they are private (see below). |
 
 ### Stable proxy URLs
 
 Without `PROXY_SECRET`, a random key is generated at each start, which invalidates all previously issued proxy URLs (bookmarks, history). Set `PROXY_SECRET` to a long random value for stable URLs.
+
+### Accessing IP addresses and internal hosts
+
+Public sites, IP addresses and hostnames work out of the box. Private, loopback and link-local targets are blocked by default and must be allowed explicitly with `PROXY_ALLOW_HOSTS`, a comma-separated list of:
+
+- IP addresses, e.g. `192.168.1.10`
+- CIDR ranges, e.g. `192.168.1.0/24`
+- Hostnames, e.g. `nas.local`, `intranet.example.lan`
+
+```bash
+PROXY_ALLOW_HOSTS=192.168.1.0/24,nas.local
+```
+
+Only the listed targets are opened up; everything else stays blocked. A listed hostname is allowed regardless of the IP it resolves to. Inside Docker, `localhost` is the container itself; use the host's LAN IP or hostname instead.
 
 ### Authentication
 
@@ -104,7 +119,7 @@ Serve the proxy over HTTPS (e.g. behind a reverse proxy) so credentials and toke
 
 ## Security
 
-- **SSRF protection:** private, loopback and link-local addresses are blocked on the IP actually connected to, which also defends against DNS rebinding. Your home or internal network is not reachable through the proxy.
+- **SSRF protection:** private, loopback and link-local addresses are blocked on the IP actually connected to, which also defends against DNS rebinding. Your home or internal network is not reachable through the proxy unless you list it in `PROXY_ALLOW_HOSTS`; only add targets you trust.
 - **Cookies:** cookies from target sites are kept server-side in one jar per session (identified by the `psid` cookie).
 
 ## Known limitations (MVP)
