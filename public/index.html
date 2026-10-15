@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Web Proxy</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, sans-serif; display: grid; place-items: center; min-height: 100vh; margin: 0; padding: 0 16px; }
+    form { width: min(640px, 100%); display: flex; gap: 8px; }
+    input[name=url] { flex: 1; padding: 12px 14px; font-size: 1rem; border-radius: 8px; border: 1px solid #8886; background: transparent; color: inherit; }
+    button { padding: 12px 18px; font-size: 1rem; border-radius: 8px; border: 0; background: #2563eb; color: #fff; cursor: pointer; }
+    h1 { font-size: 1.2rem; text-align: center; font-weight: 600; }
+    main { width: min(640px, 100%); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Web Proxy</h1>
+    <form action="/go" method="get">
+      <input name="url" type="text" placeholder="https://example.com" autofocus required>
+      <button type="submit">Öffnen</button>
+    </form>
+  </main>
+</body>
+</html>
