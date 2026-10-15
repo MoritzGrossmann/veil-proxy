@@ -2,9 +2,29 @@
 (function () {
   'use strict';
   var PREFIX = '/p/';
-  var PROXIED = /^(?:https?:\/\/[^/]+)?\/p\/https?%3A/i;
+  var PROXIED = /^(?:https?:\/\/[^/]+)?\/(?:p\/v1\.|__proxy\/)/i;
   var SKIP = /^(data:|blob:|javascript:|about:|mailto:|tel:|#)/i;
   var base = window.__PROXY_BASE || location.href;
+
+  // Die Zieladresse steckt verschlüsselt in der Proxy-URL; Ver-/Entschlüsselung macht der Server.
+  // Synchrones XHR, weil die Umschreibe-Hooks (setAttribute, fetch, ...) synchron antworten müssen.
+  var origOpen = XMLHttpRequest.prototype.open;
+  var rpcCache = { enc: {}, dec: {} };
+  function rpc(kind, value) {
+    var hit = rpcCache[kind][value];
+    if (hit !== undefined) return hit;
+    try {
+      var xhr = new XMLHttpRequest();
+      origOpen.call(xhr, 'POST', '/__proxy/' + kind, false);
+      xhr.setRequestHeader('content-type', 'text/plain');
+      xhr.send(value);
+      if (xhr.status !== 200) return null;
+      rpcCache[kind][value] = xhr.responseText;
+      return xhr.responseText;
+    } catch (e) {
+      return null;
+    }
+  }
 
   function prox(u) {
     if (u == null) return u;
@@ -15,15 +35,18 @@
       if (x.protocol !== 'http:' && x.protocol !== 'https:') return u;
       var hash = x.hash;
       x.hash = '';
-      return PREFIX + encodeURIComponent(x.href) + hash;
+      var token = rpc('enc', x.href);
+      return token == null ? u : PREFIX + token + hash;
     } catch (e) {
       return u;
     }
   }
 
   function unprox(u) {
-    var m = /^(?:https?:\/\/[^/]+)?\/p\/(https?%3A[^#]*)/i.exec(u || '');
-    return m ? decodeURIComponent(m[1]) : u;
+    var m = /^(?:https?:\/\/[^/]+)?\/p\/(v1\.[A-Za-z0-9_-]+)/.exec(u || '');
+    if (!m) return u;
+    var plain = rpc('dec', m[1]);
+    return plain == null ? u : plain;
   }
 
   // fetch
@@ -38,7 +61,6 @@
   };
 
   // XMLHttpRequest
-  var origOpen = XMLHttpRequest.prototype.open;
   XMLHttpRequest.prototype.open = function (method, url) {
     var args = Array.prototype.slice.call(arguments);
     args[1] = prox(url);

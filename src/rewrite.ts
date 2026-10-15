@@ -1,9 +1,10 @@
 import * as cheerio from 'cheerio';
+import { encryptUrl } from './urlcrypt.js';
 
 const PREFIX = '/p/';
 const SKIP = /^(data:|blob:|javascript:|about:|mailto:|tel:|#)/i;
 
-/** Macht aus einer (relativen) URL eine Proxy-URL: /p/<encodeURIComponent(absolut)>#hash */
+/** Macht aus einer (relativen) URL eine Proxy-URL: /p/<verschlüsselte absolute URL>#hash */
 export function proxify(raw: string, base: string): string {
   const value = raw.trim();
   if (!value || SKIP.test(value)) return raw;
@@ -12,7 +13,7 @@ export function proxify(raw: string, base: string): string {
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return raw;
     const hash = url.hash;
     url.hash = '';
-    return PREFIX + encodeURIComponent(url.href) + hash;
+    return PREFIX + encryptUrl(url.href) + hash;
   } catch {
     return raw;
   }

@@ -7,6 +7,7 @@ import { CookieJar } from 'tough-cookie';
 import { Agent, request } from 'undici';
 import { proxify, rewriteCss, rewriteHtml } from './rewrite.js';
 import { assertUrlAllowed, safeLookup } from './ssrf.js';
+import { decryptUrl, encryptUrl } from './urlcrypt.js';
 
 const PORT = Number(process.env.PORT ?? 8080);
 const HOST = process.env.HOST ?? '0.0.0.0';
@@ -84,7 +85,7 @@ function unproxyUrl(header: string | undefined): string | undefined {
   if (!header) return undefined;
   try {
     const m = /^\/p\/(.+)$/.exec(new URL(header).pathname);
-    return m ? decodeURIComponent(m[1]) : undefined;
+    return m ? decryptUrl(m[1]) : undefined;
   } catch {
     return undefined;
   }
@@ -134,13 +135,44 @@ app.get('/go', async (req, reply) => {
   // Kein Schema, und entweder Leerzeichen oder kein Punkt/Doppelpunkt (z. B. "Foo Bar"): als Suche behandeln
   const looksLikeUrl = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) || /^(https?):\/(?!\/)/i.test(trimmed) || (!/\s/.test(trimmed) && /[.:]|^localhost/i.test(trimmed));
   const target = looksLikeUrl ? normalizeInput(trimmed) : `https://duckduckgo.com/?q=${encodeURIComponent(trimmed)}`;
-  return reply.redirect('/p/' + encodeURIComponent(target));
+  return reply.redirect('/p/' + encryptUrl(target));
 });
+
+// Für dynamisch erzeugte URLs im Browser (client.js): nur mit gültiger Session und same-origin.
+async function readSmallBody(body: unknown): Promise<string> {
+  if (typeof body === 'string') return body; // text/plain wird von Fastify selbst geparst
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of body as AsyncIterable<Buffer>) {
+    size += chunk.length;
+    if (size > 64 * 1024) throw new Error('body too large');
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+for (const [route, fn] of [['enc', encryptUrl], ['dec', decryptUrl]] as const) {
+  app.post(`/__proxy/${route}`, async (req, reply) => {
+    const sid = /(?:^|;\s*)psid=([a-f0-9]{32})/.exec(req.headers.cookie ?? '')?.[1];
+    const site = req.headers['sec-fetch-site'];
+    if (!sid || !sessions.has(sid) || (site && site !== 'same-origin')) return reply.code(403).send();
+    let value: string | undefined;
+    try {
+      value = fn(await readSmallBody(req.body));
+    } catch {
+      value = undefined;
+    }
+    if (value === undefined) return reply.code(400).send();
+    return reply.type('text/plain; charset=utf-8').header('cache-control', 'no-store').send(value);
+  });
+}
 
 app.all('/p/*', async (req, reply) => {
   let target: URL;
   try {
-    target = new URL(normalizeInput(decodeURIComponent(req.raw.url!.slice(3))));
+    const decoded = decryptUrl(req.raw.url!.slice(3));
+    if (decoded === undefined) throw new Error('ungültiges Token');
+    target = new URL(decoded);
     assertUrlAllowed(target);
   } catch (err) {
     return reply.code(400).type('text/plain; charset=utf-8').send(`Ungültige oder nicht erlaubte URL: ${(err as Error).message}`);
