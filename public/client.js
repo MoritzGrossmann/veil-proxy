@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   var PREFIX = '/p/';
-  var PROXIED = /^(?:https?:\/\/[^/]+)?\/(?:p\/v2\.|__proxy\/)/i;
+  var PROXIED = /^(?:https?:\/\/[^/]+)?\/(?:p\/v3\.|__proxy\/)/i;
   var SKIP = /^(data:|blob:|javascript:|about:|mailto:|tel:|#)/i;
   var base = window.__PROXY_BASE || location.href;
 
@@ -43,7 +43,7 @@
   }
 
   function unprox(u) {
-    var m = /^(?:https?:\/\/[^/]+)?\/p\/(v2\.[A-Za-z0-9_-]+)/.exec(u || '');
+    var m = /^(?:https?:\/\/[^/]+)?\/p\/(v3\.[A-Za-z0-9_.-]+)/.exec(u || '');
     if (!m) return u;
     var plain = rpc('dec', m[1]);
     return plain == null ? u : plain;

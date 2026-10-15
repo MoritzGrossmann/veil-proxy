@@ -21,7 +21,7 @@ A self-hosted rewriting web proxy with encrypted target URLs, SSRF protection an
 
 ## What is Veil?
 
-Enter a URL and Veil fetches the page on the server and rewrites every link and resource to flow back through the proxy as `/p/<encrypted target>`. The real destination is sealed with AES-256-GCM, so it cannot be reconstructed without your server key. The key also depends on a hash of the browser fingerprint and the current UTC day.
+Enter a URL and Veil fetches the page on the server and rewrites every link and resource to flow back through the proxy as `/p/<encrypted target>`. The real destination is sealed with AES-256-GCM, so it cannot be reconstructed without your server key. The key also depends on a hash of the browser fingerprint and the creation time (15-minute window).
 
 Use it to reach sites from a restricted network, keep target URLs out of browser history and logs, or browse through a single trusted exit point.
 
@@ -30,7 +30,7 @@ Use it to reach sites from a restricted network, keep target URLs out of browser
 | | |
 | --- | --- |
 | **Full rewriting** | HTML, links and resources are rewritten so everything keeps flowing through the proxy. |
-| **Encrypted URLs** | Targets in proxy paths are encrypted with AES-256-GCM. The key is derived from the server secret, a browser fingerprint hash and the current UTC day: URLs only work in the browser that created them and expire at 00:00 UTC. |
+| **Encrypted URLs** | Targets in proxy paths are encrypted with AES-256-GCM. The key is derived from the server secret, a browser fingerprint hash and the creation time (15-minute window): URLs only work in the browser that created them and expire at 00:00 UTC. |
 | **SSRF protection** | Private, loopback and link-local addresses are blocked on the connected IP, which also defeats DNS rebinding. Open up trusted targets with `PROXY_ALLOW_HOSTS`. |
 | **Address bar** | Built into proxied pages, with a DuckDuckGo fallback for non-URL input. |
 | **Session cookies** | Cookies of target sites live in a per-session, server-side jar. |
@@ -106,7 +106,7 @@ All configuration is done through environment variables.
 
 ### Stable proxy URLs
 
-Without `PROXY_SECRET`, a random key is generated at each start, which invalidates all previously issued proxy URLs (bookmarks, history). Set `PROXY_SECRET` to a long random value for stable URLs. Independently of that, proxy URLs expire at 00:00 UTC and cannot be opened from another browser or device, so bookmarks of `/p/...` links stop working after a day.
+Without `PROXY_SECRET`, a random key is generated at each start, which invalidates all previously issued proxy URLs (bookmarks, history). Set `PROXY_SECRET` to a long random value for stable URLs. Independently of that, proxy URLs expire 24 hours after creation (sliding window) and cannot be opened from another browser or device, so bookmarks of `/p/...` links stop working after 24 hours.
 
 ### Accessing IP addresses and internal hosts
 
