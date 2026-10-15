@@ -1,6 +1,12 @@
 services:
-  proxy:
+  veil-proxy:
     build: .
     restart: unless-stopped
     ports:
       - "8080:8080"
+    environment:
+      # Login-Zugangsdaten, per .env-Datei (siehe .env.example) oder Shell setzen.
+      PROXY_USER: ${PROXY_USER:-admin}
+      PROXY_PASS: ${PROXY_PASS:?PROXY_PASS muss gesetzt sein (z. B. in .env)}
+      PROXY_SECRET: ${PROXY_SECRET:-}
+      PROXY_TOKEN_TTL_HOURS: ${PROXY_TOKEN_TTL_HOURS:-12}

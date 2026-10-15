@@ -1,18 +1,17 @@
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import type { Readable } from 'node:stream';
 import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
 import { CookieJar } from 'tough-cookie';
 import { Agent, request } from 'undici';
+import { registerAuth } from './auth.js';
 import { proxify, rewriteCss, rewriteHtml } from './rewrite.js';
 import { assertUrlAllowed, safeLookup } from './ssrf.js';
 import { decryptUrl, encryptUrl } from './urlcrypt.js';
 
 const PORT = Number(process.env.PORT ?? 8080);
 const HOST = process.env.HOST ?? '0.0.0.0';
-const USER = process.env.PROXY_USER;
-const PASS = process.env.PROXY_PASS;
 const MAX_REWRITE_BYTES = 25 * 1024 * 1024;
 
 const publicDir = new URL('../public/', import.meta.url);
@@ -27,19 +26,7 @@ const app = Fastify({ logger: { level: 'info', redact: ['req.headers.authorizati
 app.addContentTypeParser('*', (_req, payload, done) => done(null, payload));
 
 // ---------- Auth ----------
-const digest = (s: string) => createHash('sha256').update(s).digest();
-const safeEq = (a: string, b: string) => timingSafeEqual(digest(a), digest(b));
-
-app.addHook('onRequest', async (req, reply) => {
-  if (!USER || !PASS) return;
-  const header = req.headers.authorization ?? '';
-  if (header.startsWith('Basic ')) {
-    const decoded = Buffer.from(header.slice(6), 'base64').toString();
-    const i = decoded.indexOf(':');
-    if (i >= 0 && safeEq(decoded.slice(0, i), USER) && safeEq(decoded.slice(i + 1), PASS)) return;
-  }
-  return reply.code(401).header('www-authenticate', 'Basic realm="proxy"').send('Authentication required');
-});
+registerAuth(app);
 
 // ---------- Sessions / Cookie-Jars ----------
 interface Session {
