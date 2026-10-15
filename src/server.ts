@@ -158,11 +158,11 @@ app.all('/p/*', async (req, reply) => {
   let target: URL;
   try {
     const decoded = decryptUrl(req.raw.url!.slice(3));
-    if (decoded === undefined) throw new Error('ungültiges Token');
+    if (decoded === undefined) throw new Error('invalid token');
     target = new URL(decoded);
     assertUrlAllowed(target);
   } catch (err) {
-    return reply.code(400).type('text/plain; charset=utf-8').send(`Ungültige oder nicht erlaubte URL: ${(err as Error).message}`);
+    return reply.code(400).type('text/plain; charset=utf-8').send(`Invalid or disallowed URL:${(err as Error).message}`);
   }
 
   const session = getSession(req, reply);
@@ -239,8 +239,8 @@ app.all('/p/*', async (req, reply) => {
     const e = err as Error & { cause?: Error };
     const msg = `${e.message} ${e.cause?.message ?? ''}`;
     req.log.warn({ target: target.href, err: msg }, 'upstream error');
-    if (msg.includes('blocked')) return reply.code(403).type('text/plain; charset=utf-8').send('Zieladresse nicht erlaubt.');
-    return reply.code(502).type('text/plain; charset=utf-8').send(`Upstream-Fehler: ${e.cause?.message ?? e.message}`);
+    if (msg.includes('blocked')) return reply.code(403).type('text/plain; charset=utf-8').send('Target address not allowed.');
+    return reply.code(502).type('text/plain; charset=utf-8').send(`Upstream error:${e.cause?.message ?? e.message}`);
   }
 });
 

@@ -6,7 +6,7 @@ import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes }
  * immer dasselbe Token ergibt (Browser-Cache, Verlauf). Ohne den Schlüssel lässt sich die URL nicht lesen.
  */
 const SECRET = process.env.PROXY_SECRET;
-if (!SECRET) console.warn('PROXY_SECRET nicht gesetzt: zufälliger Schlüssel, Proxy-URLs werden nach einem Neustart ungültig.');
+if (!SECRET) console.warn('PROXY_SECRET not set: using a random key, proxy URLs become invalid after a restart.');
 
 const master = createHash('sha256').update(SECRET ?? randomBytes(32)).digest();
 const encKey = createHmac('sha256', master).update('url-enc').digest();

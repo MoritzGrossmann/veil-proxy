@@ -86,11 +86,11 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
 function loginPage(next: string, error?: string): string {
   return `<!doctype html>
-<html lang="de">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Veil – Anmelden</title>
+  <title>Veil – Sign in</title>
   <style>
     :root { color-scheme: light dark; }
     body { font-family: system-ui, sans-serif; display: grid; place-items: center; min-height: 100vh; margin: 0; padding: 0 16px; }
@@ -103,12 +103,12 @@ function loginPage(next: string, error?: string): string {
 </head>
 <body>
   <form method="post" action="/login">
-    <h1>Anmelden</h1>
+    <h1>Sign in</h1>
     ${error ? `<p class="err">${esc(error)}</p>` : ''}
     <input type="hidden" name="next" value="${esc(next)}">
-    <input name="username" placeholder="Benutzername" autocomplete="username" autofocus required>
-    <input name="password" type="password" placeholder="Passwort" autocomplete="current-password" required>
-    <button type="submit">Anmelden</button>
+    <input name="username" placeholder="Username" autocomplete="username" autofocus required>
+    <input name="password" type="password" placeholder="Password" autocomplete="current-password" required>
+    <button type="submit">Sign in</button>
   </form>
 </body>
 </html>`;
@@ -152,7 +152,7 @@ export function registerAuth(app: FastifyInstance) {
   app.post('/login', async (req, reply) => {
     const result = await authenticate(req, reply);
     if (!result) {
-      const msg = reply.statusCode === 429 ? 'Zu viele Versuche. Bitte später erneut versuchen.' : 'Benutzername oder Passwort falsch.';
+      const msg = reply.statusCode === 429 ? 'Too many attempts. Please try again later.' : 'Incorrect username or password.';
       return reply.type('text/html; charset=utf-8').send(loginPage('/', msg));
     }
     const secure = req.protocol === 'https' ? '; Secure' : '';

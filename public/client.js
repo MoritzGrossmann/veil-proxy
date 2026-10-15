@@ -146,7 +146,7 @@
         'button{height:100%;padding:0 14px;font:inherit;border:0;border-radius:16px;background:#2563eb;color:#fff;cursor:pointer}' +
         '@media (prefers-color-scheme:dark){form{background:#2b2b2b}input{background:#1a1a1a;color:#eee;border-color:#fff3}}' +
         '</style>' +
-        '<form action="/go" method="get"><input name="url" type="text" spellcheck="false" autocomplete="off"><button type="submit">Öffnen</button></form>';
+        '<form action="/go" method="get"><input name="url" type="text" spellcheck="false" autocomplete="off"><button type="submit">Open</button></form>';
       var input = root.querySelector('input');
       var sync = function () {
         var cur = unprox(location.pathname + location.search);
