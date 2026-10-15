@@ -1,15 +1,42 @@
-# veil-proxy
+<div align="center">
 
-Veil is a rewriting web proxy. Enter a URL, and the target page is fetched through the server with all links and resources rewritten to `/p/<encrypted target>`. The target is encrypted with AES-256-GCM, so the real URL cannot be reconstructed without the server key.
+<img src="public/icons/icon-256.png" alt="Veil logo" width="128" height="128">
+
+# Veil
+
+**See through the veil.**
+
+A self-hosted rewriting web proxy with encrypted target URLs, SSRF protection and optional login. One container, no setup.
+
+[![Docker Hub](https://img.shields.io/docker/v/moritzgrossmann/veil-proxy?label=Docker%20Hub&logo=docker&logoColor=white&color=7c3aed)](https://hub.docker.com/r/moritzgrossmann/veil-proxy)
+[![Docker Pulls](https://img.shields.io/docker/pulls/moritzgrossmann/veil-proxy?color=7c3aed)](https://hub.docker.com/r/moritzgrossmann/veil-proxy)
+![Node.js](https://img.shields.io/badge/node-%E2%89%A520-7c3aed?logo=nodedotjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-7c3aed?logo=typescript&logoColor=white)
+
+[Quick start](#quick-start) · [Configuration](#configuration) · [Security](#security) · [Limitations](#known-limitations-mvp)
+
+</div>
+
+---
+
+## What is Veil?
+
+Enter a URL and Veil fetches the page on the server and rewrites every link and resource to flow back through the proxy as `/p/<encrypted target>`. The real destination is sealed with AES-256-GCM, so it cannot be reconstructed without your server key. The key also depends on a hash of the browser fingerprint and the current UTC day.
+
+Use it to reach sites from a restricted network, keep target URLs out of browser history and logs, or browse through a single trusted exit point.
 
 ## Features
 
-- Rewrites HTML, links and resources so everything keeps flowing through the proxy
-- Address bar on proxied pages, with a DuckDuckGo search fallback for non-URL input
-- Encrypted target URLs in proxy paths (AES-256-GCM)
-- SSRF protection (private, loopback and link-local addresses are blocked unless explicitly allowed via `PROXY_ALLOW_HOSTS`)
-- Per-session server-side cookie jar for target sites
-- Optional login (username/password) with Bearer token authentication
+| | |
+| --- | --- |
+| **Full rewriting** | HTML, links and resources are rewritten so everything keeps flowing through the proxy. |
+| **Encrypted URLs** | Targets in proxy paths are encrypted with AES-256-GCM. The key is derived from the server secret, a browser fingerprint hash and the current UTC day: URLs only work in the browser that created them and expire at 00:00 UTC. |
+| **SSRF protection** | Private, loopback and link-local addresses are blocked on the connected IP, which also defeats DNS rebinding. Open up trusted targets with `PROXY_ALLOW_HOSTS`. |
+| **Address bar** | Built into proxied pages, with a DuckDuckGo fallback for non-URL input. |
+| **Session cookies** | Cookies of target sites live in a per-session, server-side jar. |
+| **Optional login** | Username/password with Bearer token authentication for browser and API. |
+| **Installable** | Ships a web app manifest and icons, so it can be added to your home screen. |
+| **Easy to run** | A single Docker image, configured entirely through environment variables. |
 
 ## Quick start
 
@@ -79,7 +106,7 @@ All configuration is done through environment variables.
 
 ### Stable proxy URLs
 
-Without `PROXY_SECRET`, a random key is generated at each start, which invalidates all previously issued proxy URLs (bookmarks, history). Set `PROXY_SECRET` to a long random value for stable URLs.
+Without `PROXY_SECRET`, a random key is generated at each start, which invalidates all previously issued proxy URLs (bookmarks, history). Set `PROXY_SECRET` to a long random value for stable URLs. Independently of that, proxy URLs expire at 00:00 UTC and cannot be opened from another browser or device, so bookmarks of `/p/...` links stop working after a day.
 
 ### Accessing IP addresses and internal hosts
 

@@ -8,7 +8,7 @@ import { Agent, request } from 'undici';
 import { registerAuth } from './auth.js';
 import { proxify, rewriteCss, rewriteHtml } from './rewrite.js';
 import { assertUrlAllowed, safeLookup } from './ssrf.js';
-import { decryptUrl, encryptUrl } from './urlcrypt.js';
+import { decryptUrl, deriveKey, encryptUrl, keyFromCookie, type UrlKey } from './urlcrypt.js';
 
 const PORT = Number(process.env.PORT ?? 8080);
 const HOST = process.env.HOST ?? '0.0.0.0';
@@ -17,6 +17,7 @@ const MAX_REWRITE_BYTES = 25 * 1024 * 1024;
 const publicDir = new URL('../public/', import.meta.url);
 const indexHtml = readFileSync(new URL('index.html', publicDir));
 const clientJs = readFileSync(new URL('client.js', publicDir));
+const fpJs = readFileSync(new URL('fp.js', publicDir));
 const manifestJson = readFileSync(new URL('manifest.json', publicDir));
 const ICON_RE = /^[a-z0-9-]+\.png$/;
 
@@ -70,11 +71,11 @@ function normalizeInput(input: string): string {
   return /^[a-z][a-z0-9+.-]*:\/\//i.test(s) ? s : `https://${s}`;
 }
 
-function unproxyUrl(header: string | undefined): string | undefined {
+function unproxyUrl(header: string | undefined, key: UrlKey): string | undefined {
   if (!header) return undefined;
   try {
     const m = /^\/p\/(.+)$/.exec(new URL(header).pathname);
-    return m ? decryptUrl(m[1]) : undefined;
+    return m ? decryptUrl(m[1], key) : undefined;
   } catch {
     return undefined;
   }
@@ -127,16 +128,32 @@ app.get<{ Params: { file: string } }>('/icons/:file', async (req, reply) => {
   }
   return reply.type('image/png').header('cache-control', 'public, max-age=604800').send(icon);
 });
+app.get('/__proxy/fp.js', async (_req, reply) => reply.type('application/javascript; charset=utf-8').header('cache-control', 'no-cache').send(fpJs));
 app.get('/__proxy/client.js', async (_req, reply) => reply.type('application/javascript; charset=utf-8').header('cache-control', 'no-cache').send(clientJs));
+
+app.post('/__proxy/fp', async (req, reply) => {
+  if (req.headers['sec-fetch-site'] && req.headers['sec-fetch-site'] !== 'same-origin') return reply.code(403).send();
+  let fp: string;
+  try {
+    fp = await readSmallBody(req.body);
+  } catch {
+    return reply.code(400).send();
+  }
+  if (!deriveKey(fp)) return reply.code(400).send();
+  const secure = req.protocol === 'https' ? '; Secure' : '';
+  return reply.code(204).header('set-cookie', `pfp=${encodeURIComponent(fp)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000${secure}`).send();
+});
 
 app.get('/go', async (req, reply) => {
   const input = (req.query as { url?: string }).url;
   if (!input) return reply.redirect('/');
+  const key = keyFromCookie(req.headers.cookie);
+  if (!key) return reply.redirect('/'); // Footprint-Cookie fehlt: Startseite setzt ihn (fp.js)
   const trimmed = input.trim();
   // Kein Schema, und entweder Leerzeichen oder kein Punkt/Doppelpunkt (z. B. "Foo Bar"): als Suche behandeln
   const looksLikeUrl = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) || /^(https?):\/(?!\/)/i.test(trimmed) || (!/\s/.test(trimmed) && /[.:]|^localhost/i.test(trimmed));
   const target = looksLikeUrl ? normalizeInput(trimmed) : `https://duckduckgo.com/?q=${encodeURIComponent(trimmed)}`;
-  return reply.redirect('/p/' + encryptUrl(target));
+  return reply.redirect('/p/' + encryptUrl(target, key));
 });
 
 // Für dynamisch erzeugte URLs im Browser (client.js): nur mit gültiger Session und same-origin.
@@ -157,9 +174,11 @@ for (const [route, fn] of [['enc', encryptUrl], ['dec', decryptUrl]] as const) {
     const sid = /(?:^|;\s*)psid=([a-f0-9]{32})/.exec(req.headers.cookie ?? '')?.[1];
     const site = req.headers['sec-fetch-site'];
     if (!sid || !sessions.has(sid) || (site && site !== 'same-origin')) return reply.code(403).send();
+    const key = keyFromCookie(req.headers.cookie);
+    if (!key) return reply.code(403).send();
     let value: string | undefined;
     try {
-      value = fn(await readSmallBody(req.body));
+      value = fn(await readSmallBody(req.body), key);
     } catch {
       value = undefined;
     }
@@ -169,10 +188,12 @@ for (const [route, fn] of [['enc', encryptUrl], ['dec', decryptUrl]] as const) {
 }
 
 app.all('/p/*', async (req, reply) => {
+  const key = keyFromCookie(req.headers.cookie);
+  if (!key) return reply.code(400).type('text/plain; charset=utf-8').send('Invalid or disallowed URL:missing browser fingerprint, open the start page first');
   let target: URL;
   try {
-    const decoded = decryptUrl(req.raw.url!.slice(3));
-    if (decoded === undefined) throw new Error('invalid token');
+    const decoded = decryptUrl(req.raw.url!.slice(3), key);
+    if (decoded === undefined) throw new Error('invalid, expired or foreign token');
     target = new URL(decoded);
     assertUrlAllowed(target);
   } catch (err) {
@@ -187,7 +208,7 @@ app.all('/p/*', async (req, reply) => {
     const v = req.headers[name];
     if (typeof v === 'string') headers[name] = v;
   }
-  const referer = unproxyUrl(req.headers.referer);
+  const referer = unproxyUrl(req.headers.referer, key);
   if (referer) headers.referer = referer;
   if (req.headers['sec-fetch-site']) {
     headers['sec-fetch-site'] = !referer ? 'none' : new URL(referer).origin === target.origin ? 'same-origin' : 'cross-site';
@@ -216,7 +237,7 @@ app.all('/p/*', async (req, reply) => {
       if (v != null && !DROP_RES.has(k)) out[k] = v;
     }
     const location = res.headers.location;
-    if (typeof location === 'string') out.location = proxify(location, target.href);
+    if (typeof location === 'string') out.location = proxify(location, target.href, key);
 
     const ctype = String(res.headers['content-type'] ?? '');
     // Der Browser sagt, wofür er die Ressource lädt; Fonts/Bilder/Skripte nie umschreiben
@@ -236,7 +257,7 @@ app.all('/p/*', async (req, reply) => {
         return reply.code(res.statusCode).headers(out).send(raw);
       }
       const text = toText(raw, ctype);
-      const rewritten = isHtml ? rewriteHtml(text, target.href) : rewriteCss(text, target.href);
+      const rewritten = isHtml ? rewriteHtml(text, target.href, key) : rewriteCss(text, target.href, key);
       delete out['content-encoding'];
       delete out['content-length'];
       delete out.etag;
