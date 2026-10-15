@@ -17,6 +17,8 @@ const MAX_REWRITE_BYTES = 25 * 1024 * 1024;
 const publicDir = new URL('../public/', import.meta.url);
 const indexHtml = readFileSync(new URL('index.html', publicDir));
 const clientJs = readFileSync(new URL('client.js', publicDir));
+const manifestJson = readFileSync(new URL('manifest.json', publicDir));
+const ICON_RE = /^[a-z0-9-]+\.png$/;
 
 const agent = new Agent({ connect: { lookup: safeLookup }, headersTimeout: 30_000, bodyTimeout: 60_000 });
 
@@ -113,6 +115,18 @@ async function readLimited(body: Readable, limit: number): Promise<Buffer> {
 
 // ---------- Routen ----------
 app.get('/', async (_req, reply) => reply.type('text/html; charset=utf-8').send(indexHtml));
+app.get('/manifest.json', async (_req, reply) => reply.type('application/manifest+json; charset=utf-8').header('cache-control', 'public, max-age=3600').send(manifestJson));
+app.get<{ Params: { file: string } }>('/icons/:file', async (req, reply) => {
+  const { file } = req.params;
+  if (!ICON_RE.test(file)) return reply.code(404).send('Not found');
+  let icon: Buffer;
+  try {
+    icon = readFileSync(new URL(`icons/${file}`, publicDir));
+  } catch {
+    return reply.code(404).send('Not found');
+  }
+  return reply.type('image/png').header('cache-control', 'public, max-age=604800').send(icon);
+});
 app.get('/__proxy/client.js', async (_req, reply) => reply.type('application/javascript; charset=utf-8').header('cache-control', 'no-cache').send(clientJs));
 
 app.get('/go', async (req, reply) => {

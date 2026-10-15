@@ -92,6 +92,9 @@ function loginPage(next: string, error?: string): string {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Veil – Sign in</title>
   <meta name="theme-color" content="#0B0A12">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-32.png">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='.1' y1='0' x2='.9' y2='1'%3E%3Cstop offset='0' stop-color='%23C4B5FD'/%3E%3Cstop offset='1' stop-color='%236D28D9'/%3E%3C/linearGradient%3E%3CclipPath id='v'%3E%3Cpath d='M10 14H34L48 52 62 14H86L58 84H38Z'/%3E%3C/clipPath%3E%3C/defs%3E%3Cpath d='M10 14H34L48 52 62 14H86L58 84H38Z' fill='url(%23g)'/%3E%3Cg clip-path='url(%23v)'%3E%3Cpath d='M0 46C26 36 50 64 96 50V72C54 86 28 58 0 68Z' fill='%230B0A12' fill-opacity='.5'/%3E%3C/g%3E%3C/svg%3E">
   <style>
     :root {
@@ -143,7 +146,7 @@ export function registerAuth(app: FastifyInstance) {
 
   app.addHook('onRequest', async (req: FastifyRequest, reply: FastifyReply) => {
     const path = req.raw.url!.split('?')[0];
-    if (path === '/login' || path === '/api/login' || path === '/logout') return;
+    if (path === '/login' || path === '/api/login' || path === '/logout' || path === '/manifest.json' || path.startsWith('/icons/')) return;
     if (validToken(extractToken(req))) return;
     const wantsHtml = req.method === 'GET' && (req.headers.accept ?? '').includes('text/html');
     if (wantsHtml) return reply.redirect('/login?next=' + encodeURIComponent(req.raw.url!));
