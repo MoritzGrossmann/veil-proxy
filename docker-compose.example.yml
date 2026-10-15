@@ -1,0 +1,16 @@
+# Example: run Veil from the pre-built Docker Hub image (no local build needed).
+# Copy to docker-compose.yml, create a .env file next to it (see .env.example) and start with:
+#   docker compose up -d
+services:
+  veil-proxy:
+    image: moritzgrossmann/veil-proxy:latest   # or pin a release, e.g. :1.0.0
+    container_name: veil-proxy
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      PROXY_USER: ${PROXY_USER:-admin}
+      PROXY_PASS: ${PROXY_PASS:?PROXY_PASS must be set (e.g. in .env)}
+      # Set a long random value (openssl rand -hex 32) to keep proxy URLs valid across restarts.
+      PROXY_SECRET: ${PROXY_SECRET:-}
+      PROXY_TOKEN_TTL_HOURS: ${PROXY_TOKEN_TTL_HOURS:-12}

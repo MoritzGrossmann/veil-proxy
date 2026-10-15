@@ -13,20 +13,43 @@ Veil is a rewriting web proxy. Enter a URL, and the target page is fetched throu
 
 ## Quick start
 
-### Docker Compose
+### Docker Hub image (recommended)
+
+Tagged releases are published to Docker Hub as [`moritzgrossmann/veil-proxy`](https://hub.docker.com/r/moritzgrossmann/veil-proxy). Pull it with:
 
 ```bash
-docker compose up -d --build   # http://<server>:8080
+docker pull moritzgrossmann/veil-proxy:latest
 ```
 
-### Pre-built image
-
-Tagged releases are published to Docker Hub:
+Run it directly:
 
 ```bash
-docker run -d -p 8080:8080 \
+docker run -d --name veil-proxy -p 8080:8080 \
+  -e PROXY_USER=admin \
+  -e PROXY_PASS='change-me' \
   -e PROXY_SECRET="$(openssl rand -hex 32)" \
-  <dockerhub-user>/veil-proxy:latest
+  moritzgrossmann/veil-proxy:latest
+```
+
+Available tags: `latest`, plus each release as `1.0.0`, `1.0` and `1`. Pin a version in production.
+
+### Docker Compose
+
+To run the pre-built image without cloning the repo, save [docker-compose.example.yml](docker-compose.example.yml) as `docker-compose.yml` in an empty directory and add a `.env` next to it:
+
+```bash
+cp .env.example .env   # then edit PROXY_USER / PROXY_PASS / PROXY_SECRET
+docker compose up -d   # http://<server>:8080
+```
+
+Inside this repository, use `docker compose -f docker-compose.example.yml up -d` so the local `docker-compose.yml` stays untouched.
+
+To update later: `docker compose pull && docker compose up -d`.
+
+To build from source instead, use the `docker-compose.yml` in this repository:
+
+```bash
+docker compose up -d --build
 ```
 
 ### Local development
