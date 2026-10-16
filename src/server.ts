@@ -210,7 +210,15 @@ for (const [route, fn] of [['enc', encryptUrl], ['dec', decryptUrl]] as const) {
   });
 }
 
-app.all('/p/*', async (req, reply) => {
+// Eigener Scope ohne Fastifys JSON-/Text-Parser: sonst käme z. B. ein JSON-POST als geparstes Objekt
+// an und ließe sich nicht an das Ziel weiterreichen. Bodies gehen hier immer unverändert als Stream durch.
+app.register(async (scope) => {
+  scope.removeAllContentTypeParsers();
+  scope.addContentTypeParser('*', (_req, payload, done) => done(null, payload));
+  scope.all('/p/*', proxyRequest);
+});
+
+async function proxyRequest(req: FastifyRequest, reply: FastifyReply) {
   const key = keyFromCookie(req.headers.cookie);
   if (!key) return reply.code(400).type('text/plain; charset=utf-8').send('Invalid or disallowed URL:missing browser fingerprint, open the start page first');
   let target: URL;
@@ -323,7 +331,7 @@ app.all('/p/*', async (req, reply) => {
     if (msg.includes('blocked')) return reply.code(403).type('text/plain; charset=utf-8').send('Target address not allowed.');
     return reply.code(502).type('text/plain; charset=utf-8').send(`Upstream error:${e.cause?.message ?? e.message}`);
   }
-});
+}
 
 registerWebSocketTunnel(app.server, (cookieHeader) => {
   const sid = /(?:^|;\s*)psid=([a-f0-9]{32})/.exec(cookieHeader ?? '')?.[1];

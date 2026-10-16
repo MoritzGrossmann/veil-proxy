@@ -37,6 +37,9 @@
     try {
       var x = new URL(s, base);
       if (x.protocol !== 'http:' && x.protocol !== 'https:') return u;
+      // Seiten bauen URLs oft aus location.origin (Reddit: location.origin + "/svc/..."); das ist der
+      // Proxy selbst. Solche Pfade gehören zum echten Seiten-Origin, sonst ruft der Proxy sich selbst auf.
+      if (x.origin === location.origin) x = new URL(x.pathname + x.search + x.hash, base);
       window.__proxyHooks.url.forEach(function (hook) {
         try {
           hook(x, base);
@@ -63,13 +66,17 @@
   }
 
   // fetch
+  // credentials: 'omit' (bei Cross-Origin-Zielen üblich, z. B. Reddit) würde auch die Proxy-Cookies
+  // (Fingerprint, Session) weglassen; über den Proxy ist alles same-origin, daher auf 'same-origin' heben.
   var origFetch = window.fetch;
   window.fetch = function (input, init) {
     if (typeof input === 'string' || input instanceof URL) {
       input = prox(String(input));
     } else if (input && input.url) {
       input = new Request(prox(input.url), input);
+      if (input.credentials === 'omit') input = new Request(input, { credentials: 'same-origin' });
     }
+    if (init && init.credentials === 'omit') init = Object.assign({}, init, { credentials: 'same-origin' });
     return origFetch.call(this, input, init);
   };
 
