@@ -69,8 +69,19 @@ const URL_ATTRS: Array<[string, string]> = [
   ['input', 'formaction'],
 ];
 
-export function rewriteHtml(html: string, pageUrl: string, key: UrlKey): string {
+export interface RewriteOptions {
+  /** Echten Seitentitel und Favicon durch neutrale Platzhalter ersetzen */
+  hideTitle?: boolean;
+}
+
+export function rewriteHtml(html: string, pageUrl: string, key: UrlKey, options: RewriteOptions = {}): string {
   const $ = cheerio.load(html);
+
+  if (options.hideTitle) {
+    $('title').remove();
+    $('link[rel*="icon" i], link[rel="manifest" i], link[rel="mask-icon" i]').remove();
+    $('meta[property="og:title" i], meta[name="application-name" i], meta[name="apple-mobile-web-app-title" i]').remove();
+  }
 
   // <base> bestimmt die Auflösungsbasis und wird entfernt.
   let base = pageUrl;
@@ -124,7 +135,9 @@ export function rewriteHtml(html: string, pageUrl: string, key: UrlKey): string 
   $('link[integrity], script[integrity]').removeAttr('integrity');
 
   const config = JSON.stringify(base).replace(/</g, '\\u003c');
-  $('head').prepend(`<script>window.__PROXY_BASE=${config};</script><script src="/__proxy/client.js"></script>`);
+  if (options.hideTitle) $('head').append('<title>Veil</title><link rel="icon" type="image/png" href="/icons/icon-32.png">');
+  const flags = options.hideTitle ? 'window.__PROXY_HIDE_TITLE=true;' : '';
+  $('head').prepend(`<script>window.__PROXY_BASE=${config};${flags}</script><script src="/__proxy/client.js"></script><script src="/__proxy/workarounds.js"></script>`);
 
   return $.html();
 }

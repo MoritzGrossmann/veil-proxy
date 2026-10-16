@@ -26,6 +26,10 @@
     }
   }
 
+  // Erweiterungspunkt für Seiten-Workarounds (public/workarounds/*.js, werden nach dieser Datei geladen).
+  // url-Hooks bekommen die aufgelöste Ziel-URL (URL-Objekt, darf verändert werden) und die echte Seiten-URL.
+  window.__proxyHooks = { url: [], pageUrl: function () { return base; } };
+
   function prox(u) {
     if (u == null) return u;
     var s = String(u).trim();
@@ -33,6 +37,13 @@
     try {
       var x = new URL(s, base);
       if (x.protocol !== 'http:' && x.protocol !== 'https:') return u;
+      window.__proxyHooks.url.forEach(function (hook) {
+        try {
+          hook(x, base);
+        } catch (e) {
+          /* fehlerhafter Workaround darf das Umschreiben nicht verhindern */
+        }
+      });
       var hash = x.hash;
       x.hash = '';
       var token = rpc('enc', x.href);
@@ -41,6 +52,8 @@
       return u;
     }
   }
+
+  window.__proxyHooks.prox = prox;
 
   function unprox(u) {
     var m = /^(?:https?:\/\/[^/]+)?\/p\/(v3\.[A-Za-z0-9_.-]+)/.exec(u || '');
@@ -201,6 +214,56 @@
     };
   });
 
+  // Option "Hide Page Title": Seiten setzen Titel/Favicon oft per JS nach; neutrale Werte erzwingen.
+  if (window.__PROXY_HIDE_TITLE && window.top === window) {
+    var NEUTRAL_TITLE = 'Veil';
+    var ICON_SEL = 'link[rel~="icon" i],link[rel~="shortcut" i],link[rel~="apple-touch-icon" i],link[rel="mask-icon" i],link[rel="manifest" i]';
+    var titleDesc = Object.getOwnPropertyDescriptor(Document.prototype, 'title');
+    if (titleDesc && titleDesc.set) {
+      Object.defineProperty(document, 'title', {
+        configurable: true,
+        get: function () {
+          return NEUTRAL_TITLE;
+        },
+        set: function () {},
+      });
+    }
+    var enforcing = false;
+    var enforce = function () {
+      if (enforcing || !document.head) return;
+      enforcing = true;
+      try {
+        var titles = document.head.getElementsByTagName('title');
+        for (var i = titles.length - 1; i >= 0; i--) {
+          if (titles[i].textContent !== NEUTRAL_TITLE) titles[i].textContent = NEUTRAL_TITLE;
+        }
+        if (!titles.length) {
+          var t = document.createElement('title');
+          t.textContent = NEUTRAL_TITLE;
+          document.head.appendChild(t);
+        }
+        var icons = document.head.querySelectorAll(ICON_SEL);
+        var haveOwn = false;
+        for (var j = 0; j < icons.length; j++) {
+          if (icons[j].getAttribute('data-veil') === '1') haveOwn = true;
+          else icons[j].remove();
+        }
+        if (!haveOwn) {
+          var l = document.createElement('link');
+          origSetAttribute.call(l, 'rel', 'icon');
+          origSetAttribute.call(l, 'type', 'image/png');
+          origSetAttribute.call(l, 'href', '/icons/icon-32.png');
+          origSetAttribute.call(l, 'data-veil', '1');
+          document.head.appendChild(l);
+        }
+      } finally {
+        enforcing = false;
+      }
+    };
+    enforce();
+    new MutationObserver(enforce).observe(document.documentElement, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['href', 'rel'] });
+  }
+
   // Adressleiste wie im Browser (nur im obersten Fenster)
   if (window.top === window) {
     var BAR_HEIGHT = 44;
@@ -219,10 +282,14 @@
         'input:focus{border-color:#8B5CF6}' +
         'button{height:100%;padding:0 16px;font:inherit;font-weight:500;border:0;border-radius:16px;background:#7C3AED;color:#fff;cursor:pointer}' +
         'button:hover{background:#6D28D9}' +
+        'a.gear{flex:none;display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:16px;color:#A9A4C4}' +
+        'a.gear:hover{background:#1F1B33;color:#EDE9FE}' +
+        'a.gear svg{width:20px;height:20px}' +
         '</style>' +
         '<form action="/go" method="get">' +
         '<a class="home" href="/" title="Startseite"><svg viewBox="0 0 96 96" role="img" aria-label="Veil"><defs><linearGradient id="g" x1="0.1" y1="0" x2="0.9" y2="1"><stop offset="0" stop-color="#C4B5FD"/><stop offset="1" stop-color="#6D28D9"/></linearGradient><clipPath id="v"><path d="M10 14H34L48 52 62 14H86L58 84H38Z"/></clipPath></defs><path d="M10 14H34L48 52 62 14H86L58 84H38Z" fill="url(#g)"/><g clip-path="url(#v)"><path d="M0 46C26 36 50 64 96 50V72C54 86 28 58 0 68Z" fill="#0B0A12" fill-opacity="0.5"/></g></svg></a>' +
-        '<input name="url" type="text" aria-label="Address" spellcheck="false" autocomplete="off"><button type="submit">Open</button></form>';
+        '<input name="url" type="text" aria-label="Address" spellcheck="false" autocomplete="off"><button type="submit">Open</button>' +
+        '<a class="gear" href="/options" title="Options" aria-label="Options"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></a></form>';
       var input = root.querySelector('input');
       var sync = function () {
         var cur = unprox(location.pathname + location.search);
@@ -234,6 +301,39 @@
       setInterval(sync, 1000);
       document.documentElement.appendChild(host);
       document.documentElement.style.setProperty('padding-top', BAR_HEIGHT + 'px', 'important');
+      keepBelowBar(host);
+    };
+
+    // position:fixed/sticky mit top nahe 0 (Header, Sidebars) ignoriert das padding und läge hinter der Leiste:
+    // diese Elemente um die Leistenhöhe nach unten versetzen.
+    var SHIFTED = '__proxyShifted';
+    var keepBelowBar = function (bar) {
+      var timer = 0;
+      var scan = function () {
+        timer = 0;
+        var all = document.body ? document.body.getElementsByTagName('*') : [];
+        for (var i = 0; i < all.length; i++) {
+          var el = all[i];
+          if (el[SHIFTED] != null) continue;
+          var cs = getComputedStyle(el);
+          if (cs.position !== 'fixed' && cs.position !== 'sticky') continue;
+          if (cs.top === 'auto') continue;
+          var top = cs.top === '0%' ? 0 : /px$/.test(cs.top) ? parseFloat(cs.top) : NaN;
+          if (!(top >= 0 && top < BAR_HEIGHT)) continue;
+          el[SHIFTED] = top;
+          el.style.setProperty('top', top + BAR_HEIGHT + 'px', 'important');
+        }
+      };
+      var schedule = function () {
+        if (!timer) timer = setTimeout(scan, 200);
+      };
+      new MutationObserver(schedule).observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['class', 'style'],
+      });
+      scan();
     };
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initBar);
     else initBar();

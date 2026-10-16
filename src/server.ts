@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import type { Readable } from 'node:stream';
 import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
@@ -17,8 +17,16 @@ const MAX_REWRITE_BYTES = 25 * 1024 * 1024;
 
 const publicDir = new URL('../public/', import.meta.url);
 const indexHtml = readFileSync(new URL('index.html', publicDir));
-const clientJs = readFileSync(new URL('client.js', publicDir));
+const optionsHtml = readFileSync(new URL('options.html', publicDir));
+const clientJs =readFileSync(new URL('client.js', publicDir));
 const fpJs = readFileSync(new URL('fp.js', publicDir));
+// Seiten-Workarounds (public/workarounds/*.js) werden zu einem Skript gebündelt, das nach client.js lädt.
+const workaroundsDir = new URL('workarounds/', publicDir);
+const workaroundsJs = readdirSync(workaroundsDir)
+  .filter((f) => f.endsWith('.js'))
+  .sort()
+  .map((f) => readFileSync(new URL(f, workaroundsDir), 'utf8'))
+  .join('\n');
 const manifestJson = readFileSync(new URL('manifest.json', publicDir));
 const ICON_RE = /^[a-z0-9-]+\.png$/;
 
@@ -115,8 +123,20 @@ async function readLimited(body: Readable, limit: number): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
+// Einstellungen liegen im (JS-lesbaren) Cookie "psettings" als JSON, gesetzt von der Optionsseite.
+function readSettings(cookieHeader: string | undefined): { hideTitle: boolean } {
+  const raw = /(?:^|;\s*)psettings=([^;]*)/.exec(cookieHeader ?? '')?.[1];
+  try {
+    const parsed = raw ? (JSON.parse(decodeURIComponent(raw)) as { hideTitle?: unknown }) : {};
+    return { hideTitle: parsed.hideTitle === true };
+  } catch {
+    return { hideTitle: false };
+  }
+}
+
 // ---------- Routen ----------
 app.get('/', async (_req, reply) => reply.type('text/html; charset=utf-8').send(indexHtml));
+app.get('/options', async (_req, reply) => reply.type('text/html; charset=utf-8').send(optionsHtml));
 app.get('/manifest.json', async (_req, reply) => reply.type('application/manifest+json; charset=utf-8').header('cache-control', 'public, max-age=3600').send(manifestJson));
 app.get<{ Params: { file: string } }>('/icons/:file', async (req, reply) => {
   const { file } = req.params;
@@ -131,6 +151,8 @@ app.get<{ Params: { file: string } }>('/icons/:file', async (req, reply) => {
 });
 app.get('/__proxy/fp.js', async (_req, reply) => reply.type('application/javascript; charset=utf-8').header('cache-control', 'no-cache').send(fpJs));
 app.get('/__proxy/client.js', async (_req, reply) => reply.type('application/javascript; charset=utf-8').header('cache-control', 'no-cache').send(clientJs));
+
+app.get('/__proxy/workarounds.js', async (_req, reply) => reply.type('application/javascript; charset=utf-8').header('cache-control', 'no-cache').send(workaroundsJs));
 
 app.post('/__proxy/fp', async (req, reply) => {
   if (req.headers['sec-fetch-site'] && req.headers['sec-fetch-site'] !== 'same-origin') return reply.code(403).send();
@@ -272,7 +294,7 @@ app.all('/p/*', async (req, reply) => {
         return reply.code(res.statusCode).headers(out).send(raw);
       }
       const text = toText(raw, ctype);
-      const rewritten = isHtml ? rewriteHtml(text, target.href, key) : rewriteCss(text, target.href, key);
+      const rewritten = isHtml ? rewriteHtml(text, target.href, key, { hideTitle: readSettings(req.headers.cookie).hideTitle }) :rewriteCss(text, target.href, key);
       delete out['content-encoding'];
       delete out['content-length'];
       delete out.etag;
