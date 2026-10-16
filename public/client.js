@@ -77,15 +77,58 @@
       if (input.credentials === 'omit') input = new Request(input, { credentials: 'same-origin' });
     }
     if (init && init.credentials === 'omit') init = Object.assign({}, init, { credentials: 'same-origin' });
-    return origFetch.call(this, input, init);
+    var p = origFetch.call(this, input, init);
+    p.then(markCookiesDirty, markCookiesDirty);
+    return p;
   };
 
   // XMLHttpRequest
   XMLHttpRequest.prototype.open = function (method, url) {
     var args = Array.prototype.slice.call(arguments);
     args[1] = prox(url);
+    this.addEventListener('loadend', markCookiesDirty);
     return origOpen.apply(this, args);
   };
+
+  // document.cookie: Die Ziel-Cookies liegen im Session-Jar des Servers (Proxy-Origin-Cookies wären für alle
+  // Seiten gemeinsam und kämen nie beim Ziel an). Nicht-HttpOnly-Cookies dort lesen/schreiben, damit z. B.
+  // Double-Submit-CSRF klappt (Reddit: csrf_token-Cookie muss zum csrf_token im POST-Body passen).
+  // Nach jeder Antwort (Set-Cookie) bzw. spätestens nach einer Sekunde wird neu vom Server gelesen.
+  var cookieCache = typeof window.__PROXY_COOKIES === 'string' ? window.__PROXY_COOKIES : null;
+  var cookieTime = cookieCache == null ? 0 : Date.now();
+  function markCookiesDirty() {
+    cookieTime = 0;
+  }
+  function cookieRpc(setCookie) {
+    try {
+      var xhr = new XMLHttpRequest();
+      origOpen.call(xhr, 'POST', '/__proxy/cookie', false);
+      xhr.setRequestHeader('content-type', 'text/plain');
+      xhr.send(base + (setCookie == null ? '' : '\n' + setCookie));
+      if (xhr.status === 200) {
+        cookieCache = xhr.responseText;
+        cookieTime = Date.now();
+      }
+    } catch (e) {
+      /* Cache behalten */
+    }
+    return cookieCache || '';
+  }
+  var cookieDesc = Object.getOwnPropertyDescriptor(Document.prototype, 'cookie');
+  if (cookieDesc && cookieDesc.configurable) {
+    Object.defineProperty(Document.prototype, 'cookie', {
+      configurable: true,
+      enumerable: cookieDesc.enumerable,
+      get: function () {
+        if (this !== document) return cookieDesc.get.call(this);
+        return cookieCache != null && Date.now() - cookieTime < 1000 ? cookieCache : cookieRpc();
+      },
+      set: function (v) {
+        if (this !== document) return cookieDesc.set.call(this, v);
+        cookieRpc(String(v).replace(/[\r\n]/g, ''));
+      },
+    });
+  }
 
   if (navigator.sendBeacon) {
     var origBeacon = navigator.sendBeacon;
@@ -212,6 +255,7 @@
         try {
           var full = new URL(unprox(String(url)), base);
           base = full.href;
+          markCookiesDirty(); // Cookie-Pfade hängen an der Seiten-URL
           url = prox(full.href);
         } catch (e) {
           /* unverändert lassen */

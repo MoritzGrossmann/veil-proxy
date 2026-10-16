@@ -72,6 +72,8 @@ const URL_ATTRS: Array<[string, string]> = [
 export interface RewriteOptions {
   /** Echten Seitentitel und Favicon durch neutrale Platzhalter ersetzen */
   hideTitle?: boolean;
+  /** Für Seiten-JS sichtbare (nicht-HttpOnly) Cookies des Ziels, Startwert für document.cookie */
+  cookies?: string;
 }
 
 export function rewriteHtml(html: string, pageUrl: string, key: UrlKey, options: RewriteOptions = {}): string {
@@ -136,7 +138,8 @@ export function rewriteHtml(html: string, pageUrl: string, key: UrlKey, options:
 
   const config = JSON.stringify(base).replace(/</g, '\\u003c');
   if (options.hideTitle) $('head').append('<title>Veil</title><link rel="icon" type="image/png" href="/icons/icon-32.png">');
-  const flags = options.hideTitle ? 'window.__PROXY_HIDE_TITLE=true;' : '';
+  let flags = options.hideTitle ? 'window.__PROXY_HIDE_TITLE=true;' : '';
+  if (options.cookies != null) flags += `window.__PROXY_COOKIES=${JSON.stringify(options.cookies).replace(/</g, '\\u003c')};`;
   $('head').prepend(`<script>window.__PROXY_BASE=${config};${flags}</script><script src="/__proxy/client.js"></script><script src="/__proxy/workarounds.js"></script>`);
 
   return $.html();

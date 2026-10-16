@@ -210,6 +210,31 @@ for (const [route, fn] of [['enc', encryptUrl], ['dec', decryptUrl]] as const) {
   });
 }
 
+// document.cookie der Seite (client.js): liest/schreibt die nicht-HttpOnly-Cookies des Ziels im Session-Jar,
+// damit z. B. Double-Submit-CSRF (Cookie-Wert muss im Body stehen) funktioniert. Body: "<Seiten-URL>\n[<Cookie>]".
+// Proxy-eigene Cookies (psid, pfp, psettings) liegen nicht im Jar und bleiben damit unsichtbar.
+app.post('/__proxy/cookie', async (req, reply) => {
+  const sid = /(?:^|;\s*)psid=([a-f0-9]{32})/.exec(req.headers.cookie ?? '')?.[1];
+  const session = sid ? sessions.get(sid) : undefined;
+  const site = req.headers['sec-fetch-site'];
+  if (!session || (site && site !== 'same-origin') || !keyFromCookie(req.headers.cookie)) return reply.code(403).send();
+  let pageUrl: URL;
+  let setCookie: string;
+  try {
+    const body = await readSmallBody(req.body);
+    const nl = body.indexOf('\n');
+    pageUrl = new URL(nl < 0 ? body : body.slice(0, nl));
+    setCookie = nl < 0 ? '' : body.slice(nl + 1);
+    if (pageUrl.protocol !== 'http:' && pageUrl.protocol !== 'https:') throw new Error('bad protocol');
+  } catch {
+    return reply.code(400).send();
+  }
+  // http: false wie im Browser: kein HttpOnly setzen und keine HttpOnly-Cookies überschreiben
+  if (setCookie) await session.jar.setCookie(setCookie, pageUrl.href, { http: false, ignoreError: true });
+  const cookies = await session.jar.getCookieString(pageUrl.href, { http: false });
+  return reply.type('text/plain; charset=utf-8').header('cache-control', 'no-store').send(cookies);
+});
+
 // Eigener Scope ohne Fastifys JSON-/Text-Parser: sonst käme z. B. ein JSON-POST als geparstes Objekt
 // an und ließe sich nicht an das Ziel weiterreichen. Bodies gehen hier immer unverändert als Stream durch.
 app.register(async (scope) => {
@@ -302,7 +327,12 @@ async function proxyRequest(req: FastifyRequest, reply: FastifyReply) {
         return reply.code(res.statusCode).headers(out).send(raw);
       }
       const text = toText(raw, ctype);
-      const rewritten = isHtml ? rewriteHtml(text, target.href, key, { hideTitle: readSettings(req.headers.cookie).hideTitle }) :rewriteCss(text, target.href, key);
+      const rewritten = isHtml
+        ? rewriteHtml(text, target.href, key, {
+            hideTitle: readSettings(req.headers.cookie).hideTitle,
+            cookies: await session.jar.getCookieString(target.href, { http: false }),
+          })
+        : rewriteCss(text, target.href, key);
       delete out['content-encoding'];
       delete out['content-length'];
       delete out.etag;
