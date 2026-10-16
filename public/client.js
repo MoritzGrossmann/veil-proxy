@@ -142,14 +142,15 @@
       root.innerHTML =
         '<style>' +
         'form{display:flex;gap:10px;align-items:center;box-sizing:border-box;height:' + BAR_HEIGHT + 'px;padding:6px 10px;background:#14121F;border-bottom:1px solid #2A2542;font:14px "IBM Plex Sans",system-ui,sans-serif}' +
-        'svg{flex:none;width:24px;height:24px}' +
+        'a.home{flex:none;display:block;width:24px;height:24px}' +
+        'svg{display:block;width:24px;height:24px}' +
         'input{flex:1;min-width:0;height:100%;box-sizing:border-box;padding:0 14px;font:inherit;border:1px solid #2A2542;border-radius:16px;background:#1F1B33;color:#EDE9FE;outline:none}' +
         'input:focus{border-color:#8B5CF6}' +
         'button{height:100%;padding:0 16px;font:inherit;font-weight:500;border:0;border-radius:16px;background:#7C3AED;color:#fff;cursor:pointer}' +
         'button:hover{background:#6D28D9}' +
         '</style>' +
         '<form action="/go" method="get">' +
-        '<svg viewBox="0 0 96 96" role="img" aria-label="Veil"><defs><linearGradient id="g" x1="0.1" y1="0" x2="0.9" y2="1"><stop offset="0" stop-color="#C4B5FD"/><stop offset="1" stop-color="#6D28D9"/></linearGradient><clipPath id="v"><path d="M10 14H34L48 52 62 14H86L58 84H38Z"/></clipPath></defs><path d="M10 14H34L48 52 62 14H86L58 84H38Z" fill="url(#g)"/><g clip-path="url(#v)"><path d="M0 46C26 36 50 64 96 50V72C54 86 28 58 0 68Z" fill="#0B0A12" fill-opacity="0.5"/></g></svg>' +
+        '<a class="home" href="/" title="Startseite"><svg viewBox="0 0 96 96" role="img" aria-label="Veil"><defs><linearGradient id="g" x1="0.1" y1="0" x2="0.9" y2="1"><stop offset="0" stop-color="#C4B5FD"/><stop offset="1" stop-color="#6D28D9"/></linearGradient><clipPath id="v"><path d="M10 14H34L48 52 62 14H86L58 84H38Z"/></clipPath></defs><path d="M10 14H34L48 52 62 14H86L58 84H38Z" fill="url(#g)"/><g clip-path="url(#v)"><path d="M0 46C26 36 50 64 96 50V72C54 86 28 58 0 68Z" fill="#0B0A12" fill-opacity="0.5"/></g></svg></a>' +
         '<input name="url" type="text" aria-label="Address" spellcheck="false" autocomplete="off"><button type="submit">Open</button></form>';
       var input = root.querySelector('input');
       var sync = function () {
