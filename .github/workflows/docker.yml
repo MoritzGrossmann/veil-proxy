@@ -51,4 +51,4 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: ${{ secrets.DOCKERHUB_USERNAME }}/veil-proxy
           short-description: Rewriting web proxy with encrypted target URLs, SSRF protection and optional login.
-          readme-filepath: ./README.md
+          readme-filepath: ./DOCKERHUB.md
