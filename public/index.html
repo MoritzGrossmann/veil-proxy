@@ -38,10 +38,14 @@
     input[name=url]:focus { outline: none; border-color: var(--veil); }
     button { padding: 12px 20px; font: inherit; font-size: 1rem; font-weight: 500; border-radius: 10px; border: 0; background: var(--violet); color: #fff; cursor: pointer; }
     button:hover { background: var(--violet-hover); }
+    .gear { position: fixed; top: 16px; right: 16px; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: var(--slate); }
+    .gear:hover { background: var(--dusk); color: var(--mist); }
+    .gear svg { width: 24px; height: 24px; }
     button:focus-visible { outline: 2px solid var(--lilac); outline-offset: 2px; }
   </style>
 </head>
 <body>
+  <a class="gear" href="/options" title="Options" aria-label="Options"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></a>
   <main>
     <div class="brand">
       <svg viewBox="0 0 96 96" role="img" aria-label="Veil logo">

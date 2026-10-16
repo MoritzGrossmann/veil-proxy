@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0B0A12">
+  <title>Veil – Options</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-32.png">
+  <style>
+    :root { color-scheme: dark; --void: #0B0A12; --night: #14121F; --dusk: #1F1B33; --line: #2A2542; --violet: #7C3AED; --lilac: #C4B5FD; --mist: #EDE9FE; --slate: #A9A4C4; }
+    body { font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--void); color: var(--mist); margin: 0; padding: 32px 16px; }
+    main { width: min(640px, 100%); margin: 0 auto; }
+    header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+    h1 { margin: 0; font-size: 1.6rem; }
+    a.back { color: var(--lilac); text-decoration: none; }
+    a.back:hover { text-decoration: underline; }
+    label.opt { display: flex; gap: 14px; align-items: flex-start; padding: 16px; background: var(--night); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; }
+    input[type=checkbox] { width: 20px; height: 20px; margin: 2px 0 0; accent-color: var(--violet); flex: none; }
+    .name { font-weight: 500; }
+    .desc { color: var(--slate); font-size: .9rem; margin-top: 4px; }
+    .saved { color: var(--slate); font-size: .85rem; margin-top: 12px; min-height: 1.2em; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Options</h1>
+      <a class="back" href="/">&larr; Back</a>
+    </header>
+    <label class="opt">
+      <input type="checkbox" id="hideTitle">
+      <span>
+        <span class="name">Hide Page Title</span>
+        <div class="desc">Show a neutral title and icon instead of the real page title and favicon.</div>
+      </span>
+    </label>
+    <div class="saved" id="saved" aria-live="polite"></div>
+  </main>
+  <script>
+    (function () {
+      function read() {
+        var m = /(?:^|;\s*)psettings=([^;]*)/.exec(document.cookie);
+        try { return m ? JSON.parse(decodeURIComponent(m[1])) : {}; } catch (e) { return {}; }
+      }
+      function write(s) {
+        var secure = location.protocol === 'https:' ? '; Secure' : '';
+        document.cookie = 'psettings=' + encodeURIComponent(JSON.stringify(s)) + '; Path=/; Max-Age=31536000; SameSite=Lax' + secure;
+      }
+      var box = document.getElementById('hideTitle');
+      box.checked = read().hideTitle === true;
+      box.addEventListener('change', function () {
+        var s = read();
+        s.hideTitle = box.checked;
+        write(s);
+        document.getElementById('saved').textContent = 'Saved.';
+      });
+    })();
+  </script>
+</body>
+</html>
