@@ -82,12 +82,33 @@
   };
 
   // setAttribute für URL-Attribute
+  function proxSrcset(value) {
+    return String(value).replace(/(^|,)(\s*)([^\s,]+)/g, function (_m, sep, ws, u) {
+      return sep + ws + prox(u);
+    });
+  }
+
   var URL_ATTRS = { src: 1, href: 1, action: 1, poster: 1, data: 1, formaction: 1 };
   var origSetAttribute = Element.prototype.setAttribute;
   Element.prototype.setAttribute = function (name, value) {
-    if (URL_ATTRS[String(name).toLowerCase()]) value = prox(value);
+    var attr = String(name).toLowerCase();
+    if (URL_ATTRS[attr]) value = prox(value);
+    else if (attr === 'srcset') value = proxSrcset(value);
     return origSetAttribute.call(this, name, value);
   };
+
+  [[HTMLImageElement, 'srcset'], [HTMLSourceElement, 'srcset']].forEach(function (pair) {
+    var desc = Object.getOwnPropertyDescriptor(pair[0].prototype, pair[1]);
+    if (!desc || !desc.set) return;
+    Object.defineProperty(pair[0].prototype, pair[1], {
+      configurable: true,
+      enumerable: desc.enumerable,
+      get: desc.get,
+      set: function (v) {
+        desc.set.call(this, proxSrcset(v));
+      },
+    });
+  });
 
   // Property-Setter (el.src = ..., a.href = ...)
   [
@@ -112,6 +133,21 @@
       },
     });
   });
+
+  // getAttribute('src') eines Skripts liefert den Original-Pfad statt der Proxy-URL. Bundler wie Turbopack
+  // erkennen geladene Chunks über document.currentScript.getAttribute('src') und würden sonst nie hydrieren.
+  var origGetAttribute = Element.prototype.getAttribute;
+  Element.prototype.getAttribute = function (name) {
+    var value = origGetAttribute.call(this, name);
+    if (value == null || this.tagName !== 'SCRIPT' || String(name).toLowerCase() !== 'src') return value;
+    var plain = unprox(value);
+    try {
+      var u = new URL(plain);
+      return u.origin === new URL(base).origin ? u.pathname + u.search : plain;
+    } catch (e) {
+      return plain;
+    }
+  };
 
   // History-API: Basis nachführen, damit relative URLs weiter stimmen
   ['pushState', 'replaceState'].forEach(function (fn) {
