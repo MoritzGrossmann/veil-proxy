@@ -74,6 +74,41 @@
     };
   }
 
+  // EventSource (SSE)
+  if (window.EventSource) {
+    var OrigES = window.EventSource;
+    window.EventSource = function (url, init) {
+      return new OrigES(prox(url), init);
+    };
+    window.EventSource.prototype = OrigES.prototype;
+    ['CONNECTING', 'OPEN', 'CLOSED'].forEach(function (k) {
+      window.EventSource[k] = OrigES[k];
+    });
+  }
+
+  // WebSocket: ws(s)://ziel -> ws(s)://proxy/p/<token> (der Server tunnelt per Upgrade)
+  if (window.WebSocket) {
+    var OrigWS = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      var wsUrl = url;
+      try {
+        var u = new URL(String(url), base);
+        if (u.protocol === 'ws:') u.protocol = 'http:';
+        else if (u.protocol === 'wss:') u.protocol = 'https:';
+        var p = new URL(prox(u.href), location.href);
+        p.protocol = p.protocol === 'https:' ? 'wss:' : 'ws:';
+        wsUrl = p.href;
+      } catch (e) {
+        /* unverändert lassen, Browser meldet den Fehler */
+      }
+      return protocols === undefined ? new OrigWS(wsUrl) : new OrigWS(wsUrl, protocols);
+    };
+    window.WebSocket.prototype = OrigWS.prototype;
+    ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'].forEach(function (k) {
+      window.WebSocket[k] = OrigWS[k];
+    });
+  }
+
   var origWindowOpen = window.open;
   window.open = function (url) {
     var args = Array.prototype.slice.call(arguments);

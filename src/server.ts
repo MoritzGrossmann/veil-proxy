@@ -6,9 +6,10 @@ import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
 import { CookieJar } from 'tough-cookie';
 import { Agent, request } from 'undici';
 import { registerAuth } from './auth.js';
-import { proxify, rewriteCss, rewriteHtml } from './rewrite.js';
+import { proxify, rewriteCss, rewriteHtml, rewriteInlineImports } from './rewrite.js';
 import { assertUrlAllowed, safeLookup } from './ssrf.js';
 import { decryptUrl, deriveKey, encryptUrl, keyFromCookie, type UrlKey } from './urlcrypt.js';
+import { registerWebSocketTunnel } from './ws.js';
 
 const PORT = Number(process.env.PORT ?? 8080);
 const HOST = process.env.HOST ?? '0.0.0.0';
@@ -57,7 +58,7 @@ function getSession(req: FastifyRequest, reply: FastifyReply): Session {
 }
 
 // ---------- Hilfsfunktionen ----------
-const FORWARD_REQ = ['accept', 'accept-language', 'content-type', 'content-length', 'range', 'if-none-match', 'if-modified-since', 'if-range', 'cache-control', 'pragma', 'user-agent', 'sec-ch-ua', 'sec-ch-ua-mobile', 'sec-ch-ua-platform', 'sec-fetch-dest', 'sec-fetch-mode', 'upgrade-insecure-requests'];
+const FORWARD_REQ = ['accept', 'accept-language', 'content-type', 'content-length', 'range', 'if-none-match', 'if-modified-since', 'if-range', 'cache-control', 'pragma', 'user-agent', 'sec-ch-ua', 'sec-ch-ua-mobile', 'sec-ch-ua-platform', 'sec-fetch-dest', 'sec-fetch-mode', 'upgrade-insecure-requests', 'last-event-id'];
 const DROP_RES = new Set([
   'set-cookie', 'content-security-policy', 'content-security-policy-report-only', 'x-frame-options',
   'strict-transport-security', 'report-to', 'nel', 'cross-origin-opener-policy', 'cross-origin-embedder-policy',
@@ -218,6 +219,7 @@ app.all('/p/*', async (req, reply) => {
   if (cookie) headers.cookie = cookie;
 
   const hasBody = method !== 'GET' && method !== 'HEAD';
+  const wantsStream = /text\/event-stream/i.test(req.headers.accept ?? '');
 
   try {
     const res = await request(target, {
@@ -225,6 +227,12 @@ app.all('/p/*', async (req, reply) => {
       headers,
       body: hasBody ? (req.body as Readable) : undefined,
       dispatcher: agent,
+      // Event-Streams sind lange still, daher kein Body-Timeout
+      ...(wantsStream ? { bodyTimeout: 0 } : {}),
+    });
+    // Bricht der Client ab, auch den Upstream schließen (sonst laufen Streams ewig weiter)
+    reply.raw.on('close', () => {
+      if (!res.body.destroyed) res.body.destroy();
     });
 
     const setCookies = res.headers['set-cookie'];
@@ -240,10 +248,17 @@ app.all('/p/*', async (req, reply) => {
     if (typeof location === 'string') out.location = proxify(location, target.href, key);
 
     const ctype = String(res.headers['content-type'] ?? '');
+    if (/text\/event-stream/i.test(ctype)) {
+      out['cache-control'] = 'no-cache, no-transform';
+      out['x-accel-buffering'] = 'no';
+    }
     // Der Browser sagt, wofür er die Ressource lädt; Fonts/Bilder/Skripte nie umschreiben
     // (Google liefert z. B. Schriften mit Content-Type text/html aus).
     const dest = String(req.headers['sec-fetch-dest'] ?? '');
     const neverRewrite = ['font', 'image', 'audio', 'video', 'track', 'script', 'worker', 'object', 'embed'].includes(dest);
+    // ES-Module (Skript-Fetch im CORS-Modus): Import-Pfade müssen auf den Proxy zeigen, sonst werden sie
+    // relativ zur Proxy-URL aufgelöst (./chunk.js -> /p/chunk.js)
+    const isModule = dest === 'script' && req.headers['sec-fetch-mode'] === 'cors' && /javascript|ecmascript/i.test(ctype);
     const isHtml = !neverRewrite && /text\/html|application\/xhtml\+xml/i.test(ctype);
     const isCss = !neverRewrite && /text\/css/i.test(ctype);
     const noBody = method === 'HEAD' || res.statusCode === 204 || res.statusCode === 304;
@@ -265,6 +280,15 @@ app.all('/p/*', async (req, reply) => {
       return reply.code(res.statusCode).headers(out).send(rewritten);
     }
 
+    if (isModule && !noBody) {
+      const raw = decodeBody(await readLimited(res.body as unknown as Readable, MAX_REWRITE_BYTES), String(res.headers['content-encoding'] ?? ''));
+      delete out['content-encoding'];
+      delete out['content-length'];
+      delete out.etag;
+      out['content-type'] = 'text/javascript; charset=utf-8';
+      return reply.code(res.statusCode).headers(out).send(rewriteInlineImports(toText(raw, ctype), target.href, key));
+    }
+
     if (noBody) {
       await res.body.dump();
       return reply.code(res.statusCode).headers(out).send();
@@ -277,6 +301,11 @@ app.all('/p/*', async (req, reply) => {
     if (msg.includes('blocked')) return reply.code(403).type('text/plain; charset=utf-8').send('Target address not allowed.');
     return reply.code(502).type('text/plain; charset=utf-8').send(`Upstream error:${e.cause?.message ?? e.message}`);
   }
+});
+
+registerWebSocketTunnel(app.server, (cookieHeader) => {
+  const sid = /(?:^|;\s*)psid=([a-f0-9]{32})/.exec(cookieHeader ?? '')?.[1];
+  return sid ? sessions.get(sid)?.jar : undefined;
 });
 
 await app.listen({ port: PORT, host: HOST });

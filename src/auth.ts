@@ -1,4 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import type { IncomingHttpHeaders } from 'node:http';
 import type { Readable } from 'node:stream';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
@@ -36,10 +37,15 @@ function validToken(token: string | undefined): boolean {
   return true;
 }
 
-function extractToken(req: FastifyRequest): string | undefined {
+function extractToken(req: { headers: IncomingHttpHeaders }): string | undefined {
   const m = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization ?? '');
   if (m) return m[1];
   return new RegExp(`(?:^|;\\s*)${COOKIE}=([\\w-]+)`).exec(req.headers.cookie ?? '')?.[1];
+}
+
+/** Für Requests, die nicht durch Fastify laufen (WebSocket-Upgrades). */
+export function isAuthorized(req: { headers: IncomingHttpHeaders }): boolean {
+  return !authEnabled || validToken(extractToken(req));
 }
 
 function rateLimited(ip: string): boolean {

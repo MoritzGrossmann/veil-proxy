@@ -25,6 +25,25 @@ export function rewriteCss(css: string, base: string, key: UrlKey): string {
     .replace(/@import\s+(['"])(.*?)\1/gi, (_m, q: string, u: string) => `@import ${q}${proxify(u, base, key)}${q}`);
 }
 
+/**
+ * import("…") lässt sich im Browser nicht abfangen und würde relativ zur Proxy-URL aufgelöst
+ * (SvelteKit: import("../_app/…") landet bei /_app/… statt beim Ziel). Daher in Inline-Skripten
+ * die String-Literale von dynamischen und statischen Imports serverseitig umschreiben.
+ */
+export function rewriteInlineImports(js: string, base: string, key: UrlKey): string {
+  // Bare Specifier ("lodash") bleiben unangetastet, nur relative und absolute URLs umschreiben
+  const swap = (m: string, head: string, q: string, u: string) => (/^(?:\.{0,2}\/|https?:\/\/)/i.test(u) ? `${head}${q}${proxify(u, base, key)}${q}` : m);
+  return js
+    // new URL("./worker.js", import.meta.url) (Web-Worker, Assets)
+    .replace(/(\bnew\s+URL\(\s*)(["'`])(\.{1,2}\/[^"'`$\\\n]+)\2(\s*,\s*import\.meta\.url\s*\))/g, (_m, head: string, q: string, u: string, tail: string) => `${head}${q}${proxify(u, base, key)}${q}${tail}`)
+    // Vite-Preload-Liste (__vite__mapDeps): Pfade werden zur Laufzeit gegen import.meta.url aufgelöst
+    .replace(/(\bm\.f=\[)([^\]]*)(\])/g, (_m, open: string, list: string, close: string) =>
+      open + list.replace(/(["'`])(\.{1,2}\/[^"'`\\\n]+)\1/g, (_s, q: string, u: string) => `${q}${proxify(u, base, key)}${q}`) + close)
+    .replace(/(\bimport\s*\(\s*)(['"`])([^'"`$\\\n]+)\2/g, swap)
+    .replace(/(\bimport\s*)(['"])([^'"\\\n]+)\2/g, swap)
+    .replace(/(\b(?:import|export)\b[^'"`;()]*?\bfrom\s*)(['"])([^'"\\\n]+)\2/g, swap);
+}
+
 function rewriteSrcset(value: string, base: string, key: UrlKey): string {
   return value.replace(/(^|,)(\s*)([^\s,]+)/g, (_m, sep: string, ws: string, u: string) => `${sep}${ws}${proxify(u, base, key)}`);
 }
@@ -82,6 +101,13 @@ export function rewriteHtml(html: string, pageUrl: string, key: UrlKey): string 
   });
   $('[style]').each((_i, el) => {
     $(el).attr('style', rewriteCss($(el).attr('style') ?? '', base, key));
+  });
+
+  $('script:not([src])').each((_i, el) => {
+    const type = ($(el).attr('type') ?? '').toLowerCase();
+    if (type && type !== 'module' && !/javascript|ecmascript/.test(type)) return;
+    const js = $(el).html();
+    if (js && /\bimport\b|\bexport\b/.test(js)) $(el).html(rewriteInlineImports(js, base, key));
   });
 
   $('meta[http-equiv]').each((_i, el) => {
