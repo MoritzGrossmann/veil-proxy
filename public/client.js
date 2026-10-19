@@ -394,6 +394,135 @@
     else initBar();
   }
 
+  // Eigenes Kontextmenü: Adressen werden als Original-URL kopiert, nicht als Proxy-URL.
+  // Eingabefelder und Shift+Rechtsklick behalten das native Menü.
+  (function () {
+    // Proxy-URL (auch relativ/mit Hash) -> Original-URL
+    function original(u) {
+      if (u == null) return '';
+      u = String(u).trim();
+      if (!u || SKIP.test(u) && u.charAt(0) !== '#') return u;
+      try {
+        var abs = new URL(u, location.href);
+        if (abs.origin !== location.origin) return abs.href;
+        var plain = unprox(abs.pathname + abs.search);
+        if (plain === abs.pathname + abs.search) return new URL(abs.pathname + abs.search + abs.hash, base).href;
+        return plain + abs.hash;
+      } catch (e) {
+        return u;
+      }
+    }
+
+    function copyText(text) {
+      var fallback = function () {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+        document.documentElement.appendChild(ta);
+        ta.select();
+        try {
+          document.execCommand('copy');
+        } catch (e) {
+          /* nichts zu tun */
+        }
+        ta.remove();
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).catch(fallback);
+      else fallback();
+    }
+
+    var host = null;
+    function closeMenu() {
+      if (host) {
+        host.remove();
+        host = null;
+      }
+    }
+
+    function openMenu(x, y, items) {
+      closeMenu();
+      host = document.createElement('div');
+      host.style.cssText = 'all:initial;position:fixed;top:0;left:0;z-index:2147483647;';
+      var root = host.attachShadow({ mode: 'open' });
+      var style = document.createElement('style');
+      style.textContent =
+        '.m{position:fixed;min-width:220px;max-width:340px;padding:4px;background:#1F1B33;border:1px solid #2A2542;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.5);font:13px "IBM Plex Sans",system-ui,sans-serif;color:#EDE9FE}' +
+        'button{display:block;width:100%;padding:7px 12px;border:0;border-radius:5px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}' +
+        'button:hover{background:#7C3AED;color:#fff}' +
+        'hr{margin:4px 0;border:0;border-top:1px solid #2A2542}';
+      root.appendChild(style);
+      var menu = document.createElement('div');
+      menu.className = 'm';
+      items.forEach(function (it) {
+        if (it === '-') return menu.appendChild(document.createElement('hr'));
+        var b = document.createElement('button');
+        b.textContent = it.label;
+        b.addEventListener('click', function () {
+          closeMenu();
+          it.run();
+        });
+        menu.appendChild(b);
+      });
+      root.appendChild(menu);
+      document.documentElement.appendChild(host);
+      var r = menu.getBoundingClientRect();
+      menu.style.left = Math.max(0, Math.min(x, window.innerWidth - r.width - 4)) + 'px';
+      menu.style.top = Math.max(0, Math.min(y, window.innerHeight - r.height - 4)) + 'px';
+    }
+
+    document.addEventListener(
+      'contextmenu',
+      function (e) {
+        if (e.shiftKey || e.defaultPrevented) return;
+        var t = e.target;
+        if (!(t instanceof Element) || (host && host.contains(t))) return;
+        if (t.closest('#__proxy_bar')) return;
+        if (t.closest('input,textarea,select,[contenteditable=""],[contenteditable="true"]')) return;
+
+        var items = [];
+        var link = t.closest('a[href],area[href]');
+        var media = t.closest('img,video,audio');
+        var sel = String(window.getSelection ? window.getSelection() : '');
+
+        if (link) {
+          var linkUrl = original(link.getAttribute('href'));
+          items.push({ label: 'Link in neuem Tab öffnen', run: function () { window.open(linkUrl); } });
+          items.push({ label: 'Linkadresse kopieren', run: function () { copyText(linkUrl); } });
+        }
+        if (media) {
+          var src = media.currentSrc || media.getAttribute('src') || '';
+          if (src) {
+            var mediaUrl = original(src);
+            var kind = media.tagName === 'IMG' ? 'Bild' : media.tagName === 'VIDEO' ? 'Video' : 'Audio';
+            if (items.length) items.push('-');
+            items.push({ label: kind + ' in neuem Tab öffnen', run: function () { window.open(mediaUrl); } });
+            items.push({ label: kind + 'adresse kopieren', run: function () { copyText(mediaUrl); } });
+          }
+        }
+        if (sel) {
+          if (items.length) items.push('-');
+          items.push({ label: 'Kopieren', run: function () { copyText(sel); } });
+        }
+        if (items.length) items.push('-');
+        items.push({ label: 'Zurück', run: function () { history.back(); } });
+        items.push({ label: 'Neu laden', run: function () { location.reload(); } });
+        items.push({ label: 'Seitenadresse kopieren', run: function () { copyText(base); } });
+
+        e.preventDefault();
+        openMenu(e.clientX, e.clientY, items);
+      },
+      true
+    );
+    ['click', 'scroll', 'resize', 'blur', 'wheel'].forEach(function (ev) {
+      window.addEventListener(ev, function (e) {
+        if (host && !(e.target instanceof Node && host.contains(e.target))) closeMenu();
+      }, true);
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') closeMenu();
+    }, true);
+  })();
+
   // GET-Formulare: Browser würde die Query der Proxy-URL ersetzen, daher selbst zusammenbauen
   document.addEventListener(
     'submit',
