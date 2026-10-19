@@ -81,7 +81,12 @@ export function rewriteHtml(html: string, pageUrl: string, key: UrlKey, options:
 
   if (options.hideTitle) {
     $('title').remove();
-    $('link[rel*="icon" i], link[rel="manifest" i], link[rel="mask-icon" i]').remove();
+    // Nicht entfernen, sondern neutralisieren: Seiten wie Portainer greifen per JS auf das Element zu
+    // (document.querySelector('link[rel~=icon]').href = ...) und brechen bei null ab.
+    $('link[rel*="icon" i], link[rel="manifest" i], link[rel="mask-icon" i]').each((_i, el) => {
+      const manifest = ($(el).attr('rel') ?? '').toLowerCase() === 'manifest';
+      $(el).attr('href', manifest ? '/manifest.json' : '/icons/icon-32.png').attr('data-veil', '1').removeAttr('sizes').removeAttr('type').removeAttr('crossorigin');
+    });
     $('meta[property="og:title" i], meta[name="application-name" i], meta[name="apple-mobile-web-app-title" i]').remove();
   }
 
@@ -99,6 +104,7 @@ export function rewriteHtml(html: string, pageUrl: string, key: UrlKey, options:
 
   for (const [tag, attr] of URL_ATTRS) {
     $(tag).each((_i, el) => {
+      if ($(el).attr('data-veil') === '1') return; // bereits neutralisiertes Icon/Manifest
       const v = $(el).attr(attr);
       if (v != null) $(el).attr(attr, proxify(v, base, key));
     });
@@ -137,7 +143,10 @@ export function rewriteHtml(html: string, pageUrl: string, key: UrlKey, options:
   $('link[integrity], script[integrity]').removeAttr('integrity');
 
   const config = JSON.stringify(base).replace(/</g, '\\u003c');
-  if (options.hideTitle) $('head').append('<title>Veil</title><link rel="icon" type="image/png" href="/icons/icon-32.png">');
+  if (options.hideTitle) {
+    $('head').append('<title>Veil</title>');
+    if (!$('link[rel*="icon" i]').length) $('head').append('<link rel="icon" type="image/png" href="/icons/icon-32.png" data-veil="1">');
+  }
   let flags = options.hideTitle ? 'window.__PROXY_HIDE_TITLE=true;' : '';
   if (options.cookies != null) flags += `window.__PROXY_COOKIES=${JSON.stringify(options.cookies).replace(/</g, '\\u003c')};`;
   $('head').prepend(`<script>window.__PROXY_BASE=${config};${flags}</script><script src="/__proxy/client.js"></script><script src="/__proxy/workarounds.js"></script>`);

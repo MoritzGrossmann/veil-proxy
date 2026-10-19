@@ -293,13 +293,17 @@
           t.textContent = NEUTRAL_TITLE;
           document.head.appendChild(t);
         }
+        // Icon-/Manifest-Links nie entfernen (Seiten setzen deren href per JS und brechen bei null ab), nur neutralisieren
         var icons = document.head.querySelectorAll(ICON_SEL);
-        var haveOwn = false;
+        var haveIcon = false;
         for (var j = 0; j < icons.length; j++) {
-          if (icons[j].getAttribute('data-veil') === '1') haveOwn = true;
-          else icons[j].remove();
+          var isManifest = (icons[j].getAttribute('rel') || '').toLowerCase() === 'manifest';
+          var neutral = isManifest ? '/manifest.json' : '/icons/icon-32.png';
+          if (icons[j].getAttribute('href') !== neutral) origSetAttribute.call(icons[j], 'href', neutral);
+          if (icons[j].getAttribute('data-veil') !== '1') origSetAttribute.call(icons[j], 'data-veil', '1');
+          if (!isManifest) haveIcon = true;
         }
-        if (!haveOwn) {
+        if (!haveIcon) {
           var l = document.createElement('link');
           origSetAttribute.call(l, 'rel', 'icon');
           origSetAttribute.call(l, 'type', 'image/png');
