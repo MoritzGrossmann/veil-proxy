@@ -417,9 +417,12 @@
       var fallback = function () {
         var ta = document.createElement('textarea');
         ta.value = text;
-        ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
-        document.documentElement.appendChild(ta);
+        ta.setAttribute('readonly', '');
+        ta.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0';
+        (document.body || document.documentElement).appendChild(ta);
+        ta.focus();
         ta.select();
+        ta.setSelectionRange(0, text.length);
         try {
           document.execCommand('copy');
         } catch (e) {
@@ -427,8 +430,9 @@
         }
         ta.remove();
       };
-      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).catch(fallback);
-      else fallback();
+      // Synchroner Weg zuerst (läuft sicher innerhalb der Klick-Geste, auch ohne Secure Context)
+      fallback();
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).catch(function () {});
     }
 
     var host = null;
@@ -480,8 +484,18 @@
         if (t.closest('input,textarea,select,[contenteditable=""],[contenteditable="true"]')) return;
 
         var items = [];
-        var link = t.closest('a[href],area[href]');
-        var media = t.closest('img,video,audio');
+        // composedPath: Links/Bilder in Shadow-DOMs (Web Components) sind sonst per closest() nicht erreichbar
+        var path = e.composedPath ? e.composedPath() : [];
+        var link = null;
+        var media = null;
+        for (var pi = 0; pi < path.length; pi++) {
+          var pe = path[pi];
+          if (!(pe instanceof Element)) continue;
+          if (!link && pe.matches('a[href],area[href]')) link = pe;
+          if (!media && pe.matches('img,video,audio')) media = pe;
+        }
+        if (!link) link = t.closest('a[href],area[href]');
+        if (!media) media = t.closest('img,video,audio');
         var sel = String(window.getSelection ? window.getSelection() : '');
 
         if (link) {
