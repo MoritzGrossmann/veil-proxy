@@ -72,6 +72,8 @@ const URL_ATTRS: Array<[string, string]> = [
 export interface RewriteOptions {
   /** Echten Seitentitel und Favicon durch neutrale Platzhalter ersetzen */
   hideTitle?: boolean;
+  /** <video>-Elemente komplett aus dem DOM entfernen */
+  blockVideos?: boolean;
   /** Für Seiten-JS sichtbare (nicht-HttpOnly) Cookies des Ziels, Startwert für document.cookie */
   cookies?: string;
 }
@@ -89,6 +91,8 @@ export function rewriteHtml(html: string, pageUrl: string, key: UrlKey, options:
     });
     $('meta[property="og:title" i], meta[name="application-name" i], meta[name="apple-mobile-web-app-title" i]').remove();
   }
+
+  if (options.blockVideos) $('video').remove();
 
   // <base> bestimmt die Auflösungsbasis und wird entfernt.
   let base = pageUrl;
@@ -148,6 +152,7 @@ export function rewriteHtml(html: string, pageUrl: string, key: UrlKey, options:
     if (!$('link[rel*="icon" i]').length) $('head').append('<link rel="icon" type="image/png" href="/icons/icon-32.png" data-veil="1">');
   }
   let flags = options.hideTitle ? 'window.__PROXY_HIDE_TITLE=true;' : '';
+  if (options.blockVideos) flags += 'window.__PROXY_BLOCK_VIDEOS=true;';
   if (options.cookies != null) flags += `window.__PROXY_COOKIES=${JSON.stringify(options.cookies).replace(/</g, '\\u003c')};`;
   $('head').prepend(`<script>window.__PROXY_BASE=${config};${flags}</script><script src="/__proxy/client.js"></script><script src="/__proxy/workarounds.js"></script>`);
 

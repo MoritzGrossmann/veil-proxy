@@ -319,6 +319,41 @@
     new MutationObserver(enforce).observe(document.documentElement, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['href', 'rel'] });
   }
 
+  // Option "Block Videos": per JS nachgeladene <video>-Elemente (auch in Shadow-DOMs) sofort entfernen.
+  if (window.__PROXY_BLOCK_VIDEOS) {
+    var stripVideos = function (root) {
+      if (root.nodeType !== 1 && root.nodeType !== 11) return;
+      if (root.nodeName === 'VIDEO') {
+        root.remove();
+        return;
+      }
+      var vids = root.querySelectorAll('video');
+      for (var i = 0; i < vids.length; i++) vids[i].remove();
+      var all = root.querySelectorAll('*');
+      for (var k = 0; k < all.length; k++) {
+        if (all[k].shadowRoot) {
+          stripVideos(all[k].shadowRoot);
+          watchVideos(all[k].shadowRoot);
+        }
+      }
+    };
+    var watchVideos = function (root) {
+      new MutationObserver(function (muts) {
+        for (var m = 0; m < muts.length; m++) {
+          for (var n = 0; n < muts[m].addedNodes.length; n++) stripVideos(muts[m].addedNodes[n]);
+        }
+      }).observe(root, { childList: true, subtree: true });
+    };
+    var origAttachShadow = Element.prototype.attachShadow;
+    Element.prototype.attachShadow = function (init) {
+      var sr = origAttachShadow.call(this, init);
+      watchVideos(sr);
+      return sr;
+    };
+    stripVideos(document);
+    watchVideos(document);
+  }
+
   // Adressleiste wie im Browser (nur im obersten Fenster)
   if (window.top === window) {
     var BAR_HEIGHT = 44;

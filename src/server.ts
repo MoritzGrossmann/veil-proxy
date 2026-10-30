@@ -17,7 +17,8 @@ const MAX_REWRITE_BYTES = 25 * 1024 * 1024;
 
 const publicDir = new URL('../public/', import.meta.url);
 const indexHtml = readFileSync(new URL('index.html', publicDir));
-const optionsHtml = readFileSync(new URL('options.html', publicDir));
+const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
+const optionsHtml = Buffer.from(readFileSync(new URL('options.html', publicDir), 'utf8').replace('{{VERSION}}', version));
 const clientJs =readFileSync(new URL('client.js', publicDir));
 const fpJs = readFileSync(new URL('fp.js', publicDir));
 // Seiten-Workarounds (public/workarounds/*.js) werden zu einem Skript gebündelt, das nach client.js lädt.
@@ -124,13 +125,13 @@ async function readLimited(body: Readable, limit: number): Promise<Buffer> {
 }
 
 // Einstellungen liegen im (JS-lesbaren) Cookie "psettings" als JSON, gesetzt von der Optionsseite.
-function readSettings(cookieHeader: string | undefined): { hideTitle: boolean } {
+function readSettings(cookieHeader: string | undefined): { hideTitle: boolean; blockVideos: boolean } {
   const raw = /(?:^|;\s*)psettings=([^;]*)/.exec(cookieHeader ?? '')?.[1];
   try {
-    const parsed = raw ? (JSON.parse(decodeURIComponent(raw)) as { hideTitle?: unknown }) : {};
-    return { hideTitle: parsed.hideTitle === true };
+    const parsed = raw ? (JSON.parse(decodeURIComponent(raw)) as { hideTitle?: unknown; blockVideos?: unknown }) : {};
+    return { hideTitle: parsed.hideTitle === true, blockVideos: parsed.blockVideos === true };
   } catch {
-    return { hideTitle: false };
+    return { hideTitle: false, blockVideos: false };
   }
 }
 
@@ -327,9 +328,11 @@ async function proxyRequest(req: FastifyRequest, reply: FastifyReply) {
         return reply.code(res.statusCode).headers(out).send(raw);
       }
       const text = toText(raw, ctype);
+      const settings = readSettings(req.headers.cookie);
       const rewritten = isHtml
         ? rewriteHtml(text, target.href, key, {
-            hideTitle: readSettings(req.headers.cookie).hideTitle,
+            hideTitle: settings.hideTitle,
+            blockVideos: settings.blockVideos,
             cookies: await session.jar.getCookieString(target.href, { http: false }),
           })
         : rewriteCss(text, target.href, key);

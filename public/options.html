@@ -18,6 +18,7 @@
     input[type=checkbox] { width: 20px; height: 20px; margin: 2px 0 0; accent-color: var(--violet); flex: none; }
     .name { font-weight: 500; }
     .desc { color: var(--slate); font-size: .9rem; margin-top: 4px; }
+    .version { color: var(--slate); font-size: .85rem; margin-top: 24px; }
     .saved { color: var(--slate); font-size: .85rem; margin-top: 12px; min-height: 1.2em; }
   </style>
 </head>
@@ -34,7 +35,15 @@
         <div class="desc">Show a neutral title and icon instead of the real page title and favicon.</div>
       </span>
     </label>
+    <label class="opt" style="margin-top: 12px">
+      <input type="checkbox" id="blockVideos">
+      <span>
+        <span class="name">Block Videos</span>
+        <div class="desc">Remove all video elements from pages entirely.</div>
+      </span>
+    </label>
     <div class="saved" id="saved" aria-live="polite"></div>
+    <div class="version">Version {{VERSION}}</div>
   </main>
   <script>
     (function () {
@@ -46,13 +55,15 @@
         var secure = location.protocol === 'https:' ? '; Secure' : '';
         document.cookie = 'psettings=' + encodeURIComponent(JSON.stringify(s)) + '; Path=/; Max-Age=31536000; SameSite=Lax' + secure;
       }
-      var box = document.getElementById('hideTitle');
-      box.checked = read().hideTitle === true;
-      box.addEventListener('change', function () {
-        var s = read();
-        s.hideTitle = box.checked;
-        write(s);
-        document.getElementById('saved').textContent = 'Saved.';
+      ['hideTitle', 'blockVideos'].forEach(function (name) {
+        var box = document.getElementById(name);
+        box.checked = read()[name] === true;
+        box.addEventListener('change', function () {
+          var s = read();
+          s[name] = box.checked;
+          write(s);
+          document.getElementById('saved').textContent = 'Saved.';
+        });
       });
     })();
   </script>
