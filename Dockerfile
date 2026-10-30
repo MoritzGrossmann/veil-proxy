@@ -12,6 +12,9 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
 COPY public ./public
+RUN mkdir /data && chown node:node /data
+ENV PROXY_DATA_DIR=/data
+VOLUME /data
 USER node
 EXPOSE 8080
 CMD ["node", "dist/server.js"]

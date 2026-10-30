@@ -1,4 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import type { IncomingHttpHeaders } from 'node:http';
 import type { Readable } from 'node:stream';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -6,7 +8,10 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 const USER = process.env.PROXY_USER;
 const PASS = process.env.PROXY_PASS;
 const TOKEN_TTL_MS = Number(process.env.PROXY_TOKEN_TTL_HOURS ?? 12) * 3600_000;
+const REFRESH_TTL_MS = Number(process.env.PROXY_REFRESH_TTL_DAYS ?? 90) * 86_400_000;
+const REFRESH_GRACE_MS = 30_000; // parallele Requests mit demselben (gerade rotierten) Refresh-Token
 const COOKIE = 'ptoken';
+const REFRESH_COOKIE = 'prefresh';
 const MAX_FAILS = 10;
 const FAIL_WINDOW_MS = 15 * 60_000;
 
@@ -15,33 +20,122 @@ export const authEnabled = Boolean(USER && PASS);
 const digest = (s: string) => createHash('sha256').update(s).digest();
 const safeEq = (a: string, b: string) => timingSafeEqual(digest(a), digest(b));
 
-const tokens = new Map<string, number>(); // token -> Ablaufzeit
+// Token werden nur als SHA-256-Hash gehalten und gespeichert: eine geleakte Datei enthält keine nutzbaren Token.
+const hash = (t: string) => createHash('sha256').update(t).digest('base64url');
+const tokens = new Map<string, number>(); // Hash -> Ablaufzeit
 const fails = new Map<string, { count: number; first: number }>();
+
+interface TokenPair { token: string; refreshToken: string }
+interface RefreshEntry { exp: number; rotated?: TokenPair } // rotated nur im Speicher (Karenzzeit)
+const refreshTokens = new Map<string, RefreshEntry>(); // Hash -> Eintrag
+
+const STORE = join(process.env.PROXY_DATA_DIR ?? 'data', 'tokens.json');
+
+function loadStore() {
+  try {
+    const data = JSON.parse(readFileSync(STORE, 'utf8')) as { tokens?: Record<string, number>; refresh?: Record<string, number> };
+    const now = Date.now();
+    for (const [h, exp] of Object.entries(data.tokens ?? {})) if (exp > now) tokens.set(h, exp);
+    for (const [h, exp] of Object.entries(data.refresh ?? {})) if (exp > now) refreshTokens.set(h, { exp });
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') console.error('token store unreadable, starting empty:', e);
+  }
+}
+
+function saveStore() {
+  try {
+    mkdirSync(dirname(STORE), { recursive: true });
+    const refresh: Record<string, number> = {};
+    // Gerade rotierte Token (Karenzzeit) nicht persistieren.
+    for (const [h, r] of refreshTokens) if (!r.rotated) refresh[h] = r.exp;
+    const tmp = `${STORE}.tmp`;
+    writeFileSync(tmp, JSON.stringify({ tokens: Object.fromEntries(tokens), refresh }), { mode: 0o600 });
+    renameSync(tmp, STORE);
+  } catch (e) {
+    console.error('could not persist tokens:', e);
+  }
+}
+
+if (authEnabled) loadStore();
 
 function issueToken(): string {
   const now = Date.now();
-  for (const [t, exp] of tokens) if (exp < now) tokens.delete(t);
+  for (const [h, exp] of tokens) if (exp < now) tokens.delete(h);
   const token = randomBytes(32).toString('base64url');
-  tokens.set(token, now + TOKEN_TTL_MS);
+  tokens.set(hash(token), now + TOKEN_TTL_MS);
   return token;
+}
+
+function issuePair(): TokenPair {
+  const now = Date.now();
+  for (const [h, r] of refreshTokens) if (r.exp < now) refreshTokens.delete(h);
+  const refreshToken = randomBytes(32).toString('base64url');
+  refreshTokens.set(hash(refreshToken), { exp: now + REFRESH_TTL_MS });
+  const pair = { token: issueToken(), refreshToken };
+  saveStore();
+  return pair;
+}
+
+/** Tauscht ein Refresh-Token gegen ein neues Token-Paar (Rotation, das alte Token verfällt nach kurzer Karenzzeit). */
+function refresh(old: string | undefined): TokenPair | undefined {
+  if (!old) return undefined;
+  const h = hash(old);
+  const r = refreshTokens.get(h);
+  if (!r) return undefined;
+  const now = Date.now();
+  if (r.exp < now) {
+    refreshTokens.delete(h);
+    return undefined;
+  }
+  if (r.rotated) return r.rotated;
+  r.exp = Math.min(r.exp, now + REFRESH_GRACE_MS);
+  r.rotated = issuePair();
+  saveStore(); // altes Token ist jetzt "rotated" und wird nicht mehr persistiert
+  return r.rotated;
+}
+
+/** Widerruft Access- und Refresh-Token (Logout). */
+function revoke(token: string | undefined, refreshToken: string | undefined) {
+  if (token) tokens.delete(hash(token));
+  if (refreshToken) refreshTokens.delete(hash(refreshToken));
+  saveStore();
 }
 
 function validToken(token: string | undefined): boolean {
   if (!token) return false;
-  const exp = tokens.get(token);
+  const h = hash(token);
+  const exp = tokens.get(h);
   if (exp === undefined) return false;
   if (exp < Date.now()) {
-    tokens.delete(token);
+    tokens.delete(h);
     return false;
   }
   return true;
 }
 
+const cookieValue = (req: { headers: IncomingHttpHeaders }, name: string) =>
+  new RegExp(`(?:^|;\\s*)${name}=([\\w-]+)`).exec(req.headers.cookie ?? '')?.[1];
+
 function extractToken(req: { headers: IncomingHttpHeaders }): string | undefined {
   const m = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization ?? '');
   if (m) return m[1];
-  return new RegExp(`(?:^|;\\s*)${COOKIE}=([\\w-]+)`).exec(req.headers.cookie ?? '')?.[1];
+  return cookieValue(req, COOKIE);
 }
+
+function setAuthCookies(req: FastifyRequest, reply: FastifyReply, pair: TokenPair) {
+  const secure = req.protocol === 'https' ? '; Secure' : '';
+  const attrs = (ttl: number) => `Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(ttl / 1000)}${secure}`;
+  reply.header('set-cookie', `${COOKIE}=${pair.token}; ${attrs(TOKEN_TTL_MS)}`);
+  reply.header('set-cookie', `${REFRESH_COOKIE}=${pair.refreshToken}; ${attrs(REFRESH_TTL_MS)}`);
+}
+
+const pairBody = (pair: TokenPair) => ({
+  token: pair.token,
+  token_type: 'Bearer',
+  expires_in: Math.floor(TOKEN_TTL_MS / 1000),
+  refresh_token: pair.refreshToken,
+  refresh_expires_in: Math.floor(REFRESH_TTL_MS / 1000),
+});
 
 /** Für Requests, die nicht durch Fastify laufen (WebSocket-Upgrades). */
 export function isAuthorized(req: { headers: IncomingHttpHeaders }): boolean {
@@ -152,8 +246,14 @@ export function registerAuth(app: FastifyInstance) {
 
   app.addHook('onRequest', async (req: FastifyRequest, reply: FastifyReply) => {
     const path = req.raw.url!.split('?')[0];
-    if (path === '/login' || path === '/api/login' || path === '/logout' || path === '/manifest.json' || path.startsWith('/icons/')) return;
+    if (path === '/login' || path === '/api/login' || path === '/api/refresh' || path === '/logout' || path === '/manifest.json' || path.startsWith('/icons/')) return;
     if (validToken(extractToken(req))) return;
+    // Access-Token abgelaufen, aber Refresh-Cookie vorhanden: transparent erneuern.
+    const pair = refresh(cookieValue(req, REFRESH_COOKIE));
+    if (pair) {
+      setAuthCookies(req, reply, pair);
+      return;
+    }
     const wantsHtml = req.method === 'GET' && (req.headers.accept ?? '').includes('text/html');
     if (wantsHtml) return reply.redirect('/login?next=' + encodeURIComponent(req.raw.url!));
     return reply.code(401).header('www-authenticate', 'Bearer realm="veil"').send('Authentication required');
@@ -178,7 +278,7 @@ export function registerAuth(app: FastifyInstance) {
       return undefined;
     }
     fails.delete(req.ip);
-    return { token: issueToken(), next: safeNext(creds.next) };
+    return { pair: issuePair(), next: safeNext(creds.next) };
   }
 
   // Browser-Formular: Token als HttpOnly-Cookie setzen und weiterleiten.
@@ -188,22 +288,29 @@ export function registerAuth(app: FastifyInstance) {
       const msg = reply.statusCode === 429 ? 'Too many attempts. Please try again later.' : 'Incorrect username or password.';
       return reply.type('text/html; charset=utf-8').send(loginPage('/', msg));
     }
-    const secure = req.protocol === 'https' ? '; Secure' : '';
-    reply.header('set-cookie', `${COOKIE}=${result.token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(TOKEN_TTL_MS / 1000)}${secure}`);
+    setAuthCookies(req, reply, result.pair);
     return reply.redirect(result.next, 303);
   });
 
-  // API: JSON {username, password} -> {token}; danach "Authorization: Bearer <token>".
+  // API: JSON {username, password} -> {token, refresh_token, ...}; danach "Authorization: Bearer <token>".
   app.post('/api/login', async (req, reply) => {
     const result = await authenticate(req, reply);
     if (!result) return reply.send({ error: reply.statusCode === 429 ? 'too many attempts' : 'invalid credentials' });
-    return reply.header('cache-control', 'no-store').send({ token: result.token, token_type: 'Bearer', expires_in: Math.floor(TOKEN_TTL_MS / 1000) });
+    return reply.header('cache-control', 'no-store').send(pairBody(result.pair));
+  });
+
+  // API: JSON {refresh_token} -> neues Paar (das Refresh-Token wird rotiert).
+  app.post('/api/refresh', async (req, reply) => {
+    const body = req.body as { refresh_token?: unknown } | undefined;
+    const pair = refresh(typeof body?.refresh_token === 'string' ? body.refresh_token : undefined);
+    if (!pair) return reply.code(401).send({ error: 'invalid refresh token' });
+    return reply.header('cache-control', 'no-store').send(pairBody(pair));
   });
 
   app.get('/logout', async (req, reply) => {
-    const token = extractToken(req);
-    if (token) tokens.delete(token);
+    revoke(extractToken(req), cookieValue(req, REFRESH_COOKIE));
     reply.header('set-cookie', `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
+    reply.header('set-cookie', `${REFRESH_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
     return reply.redirect('/login');
   });
 }

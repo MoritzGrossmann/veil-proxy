@@ -22,6 +22,7 @@ docker run -d --name veil-proxy -p 8080:8080 \
   -e PROXY_USER=admin \
   -e PROXY_PASS='change-me' \
   -e PROXY_SECRET="$(openssl rand -hex 32)" \
+  -v veil-data:/data \
   moritzgrossmann/veil-proxy:latest
 ```
 
@@ -44,7 +45,13 @@ services:
       PROXY_PASS: ${PROXY_PASS:?PROXY_PASS must be set (e.g. in .env)}
       PROXY_SECRET: ${PROXY_SECRET:-}
       PROXY_TOKEN_TTL_HOURS: ${PROXY_TOKEN_TTL_HOURS:-12}
+      PROXY_REFRESH_TTL_DAYS: ${PROXY_REFRESH_TTL_DAYS:-90}
       PROXY_ALLOW_HOSTS: ${PROXY_ALLOW_HOSTS:-}
+    volumes:
+      - veil-data:/data   # persists login tokens across restarts
+
+volumes:
+  veil-data:
 ```
 
 Add a `.env` file next to it:
@@ -79,7 +86,8 @@ All configuration is done through environment variables.
 | `PROXY_SECRET` | random | Key used to encrypt target URLs. If unset, a random key is generated on every start and previously issued proxy URLs stop working. |
 | `PROXY_USER` | - | Login username. Authentication is enabled when both `PROXY_USER` and `PROXY_PASS` are set. |
 | `PROXY_PASS` | - | Login password. |
-| `PROXY_TOKEN_TTL_HOURS` | `12` | Lifetime of issued tokens in hours. |
+| `PROXY_TOKEN_TTL_HOURS` | `12` | Lifetime of issued access tokens in hours. |
+| `PROXY_REFRESH_TTL_DAYS` | `90` | Lifetime of refresh tokens in days. |
 | `PROXY_ALLOW_HOSTS` | - | Comma-separated hostnames, IPs and CIDR ranges that may be reached even if they are private. |
 
 ### Reaching internal hosts
@@ -96,4 +104,4 @@ Inside Docker, `localhost` is the container itself; use the host's LAN IP or hos
 
 Without `PROXY_USER` and `PROXY_PASS` the proxy is open, so only run it that way on a trusted network. Serve it over HTTPS (e.g. behind a reverse proxy) so credentials and tokens are not sent in clear text.
 
-For scripts, `POST /api/login` with `{"username": "...", "password": "..."}` returns a token to send as `Authorization: Bearer <token>`.
+For scripts, `POST /api/login` with `{"username": "...", "password": "..."}` returns a token to send as `Authorization: Bearer <token>` plus a `refresh_token`; `POST /api/refresh` with `{"refresh_token": "..."}` issues a new pair.

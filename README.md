@@ -101,7 +101,8 @@ All configuration is done through environment variables.
 | `PROXY_SECRET` | random    | Key used to encrypt target URLs. If unset, a random key is generated on every start (see below).            |
 | `PROXY_USER`   | –         | Login username. Authentication is enabled when both `PROXY_USER` and `PROXY_PASS` are set.                   |
 | `PROXY_PASS`   | –         | Login password.                                                                                              |
-| `PROXY_TOKEN_TTL_HOURS` | `12` | Lifetime of issued tokens in hours.                                                                    |
+| `PROXY_TOKEN_TTL_HOURS` | `12` | Lifetime of issued access tokens in hours.                                                             |
+| `PROXY_REFRESH_TTL_DAYS` | `90` | Lifetime of refresh tokens in days.                                                                   |
 | `PROXY_ALLOW_HOSTS` | – | Comma-separated hostnames, IP addresses and CIDR ranges that may be reached even if they are private (see below). |
 
 ### Stable proxy URLs
@@ -126,9 +127,9 @@ Only the listed targets are opened up; everything else stays blocked. A listed h
 
 If `PROXY_USER` and `PROXY_PASS` are set, every request must be authenticated. Without them the proxy is open, so only run it that way on a trusted network.
 
-- **Browser:** unauthenticated visitors are redirected to `/login`. After signing in, a random Bearer token is stored in an `HttpOnly` cookie (`ptoken`). `/logout` revokes it.
-- **API / scripts:** `POST /api/login` with `{"username": "...", "password": "..."}` returns `{"token": "..."}`; send it as `Authorization: Bearer <token>`.
-- Tokens are kept in memory, so they are invalidated on restart. After 10 failed logins an IP is locked out for 15 minutes.
+- **Browser:** unauthenticated visitors are redirected to `/login`. After signing in, a random Bearer token is stored in an `HttpOnly` cookie (`ptoken`) together with a refresh token (`prefresh`, 90 days). When the access token expires it is renewed transparently and the refresh token is rotated. `/logout` revokes both.
+- **API / scripts:** `POST /api/login` with `{"username": "...", "password": "..."}` returns `{"token": "...", "refresh_token": "..."}`; send the token as `Authorization: Bearer <token>`. Once it has expired, `POST /api/refresh` with `{"refresh_token": "..."}` returns a new pair (the old refresh token is rotated out).
+- Tokens are stored as SHA-256 hashes in `tokens.json` inside `PROXY_DATA_DIR` (default `./data`, the `veil-data` volume at `/data` in Docker), so sessions survive restarts. After 10 failed logins an IP is locked out for 15 minutes.
 
 With Docker Compose, set the credentials in a `.env` file next to `docker-compose.yml` (see `.env.example`); `PROXY_PASS` is required:
 
